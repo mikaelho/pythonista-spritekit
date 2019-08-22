@@ -191,12 +191,9 @@ class Node:
     else:
       return self._parent
       
-  @prop
-  def children(self, *args):
-    if args:
-      raise NotImplementedError('children property cannot be set directly')
-    else:
-      return self._children
+  @property
+  def children(self):
+    return self._children
   
   '''  
   @prop
@@ -262,7 +259,7 @@ class Node:
   linear_damping = physics_relay('linearDamping')
   mass = physics_relay('mass')
   name = str_relay('name')
-  physics_node = node_relay('physicsBody')
+  physics_body = node_relay('physicsBody')
   position = convert_relay('position')
   resting = physics_relay_readonly('isResting')
   restitution = physics_relay('restitution')
