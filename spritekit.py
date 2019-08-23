@@ -166,7 +166,7 @@ class Node:
     self.scene = None
     
     if (self.default_physics is not None and
-      not type(self) == Scene):
+      not type(self) in [Scene, CameraNode]):
       for key in dir(self.default_physics()):
         if not key.startswith('_'):
           setattr(self, key, getattr(self.default_physics, key))
@@ -252,7 +252,16 @@ class Node:
   contact_bitmask = physics_relay('contactTestBitMask')
   
   density = physics_relay_readonly('density')
-  dynamic = physics_relay('isDynamic')
+  
+  @prop
+  def dynamic(self, *args):
+    if args:
+      value = args[0]
+      self.physics_body.setDynamic(value)
+    else:
+      return self.physics_body.isDynamic()
+  
+  #dynamic = physics_relay('isDynamic')
   frame = convert_relay('frame')
   friction = physics_relay('friction')
   hidden = node_relay('isHidden')
@@ -382,10 +391,18 @@ class CircleNode(PathNode):
     
 class SpriteNode(Node):
   
-  def __init__(self, image, **kwargs):
-    texture = SKTexture.textureWithImage_(ObjCInstance(image))
+  def __init__(self, image, alpha_threshold=None, **kwargs):
+    image_texture = Texture(image)
+    texture = image_texture.texture
+    '''
+    if type(image) == ui.Image:
+      texture = SKTexture.textureWithImage_(ObjCInstance(image))
+    '''
     self.node = TouchSpriteNode.spriteNodeWithTexture_(texture)
-    self.node.physicsBody = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+    if alpha_threshold is None:
+      self.node.physicsBody = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+    else:
+      self.node.physicsBody = SKPhysicsBody.bodyWithTexture_alphaThreshold_size_(texture, alpha_threshold, texture.size())
     super().__init__(**kwargs)
     
 
@@ -744,6 +761,22 @@ def run(scene,
   show_fps=False,
   multi_touch=True):
   scene.view.present()
+  
+class Texture:
+  
+  def __init__(self, image_data):
+    if type(image_data) == str:
+      image_data = ui.Image(image_data)
+    if type(image_data) == ui.Image:
+      self.texture = SKTexture.textureWithImage_(ObjCInstance(image_data))
+    elif type(image_data) == Texture:
+      self.texture = image_data.texture
+    else:
+      self.texture = image_data
+    
+  def crop(self, rect):
+    return Texture(SKTexture.textureWithRect_inTexture_(py_to_cg(rect), self.texture))
+    
 
 if __name__ == '__main__':
   
