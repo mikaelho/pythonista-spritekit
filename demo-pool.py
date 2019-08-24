@@ -162,6 +162,7 @@ class CueBall(CircleNode):
   def __init__(self, **kwargs):
     super().__init__(**kwargs)
     self.touch_enabled = True
+    arrow = 'iob:ios7_arrow_thin_up_32'
     
   def touch_moved(self, touch):
     if self.collision_bitmask == 1:

@@ -886,6 +886,7 @@ class SpriteView(Scripter):
     self.scene.node.paused = True
     self.scene.node.removeFromParent()
     self.skview.removeFromSuperview()
+    self.skview.release()
     self.skview = None
     self.scene.node = None
 
