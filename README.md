@@ -26,6 +26,7 @@ All other nodes are inherited from Node and share its attributes. All writeable 
 * contact_bitmask
 * density
 * dynamic - boolean
+* fill_color = background_color
 * frame - this node only
 * friction - 0.0 to 1.0
 * hidden
@@ -46,14 +47,28 @@ All other nodes are inherited from Node and share its attributes. All writeable 
 
 Argument: ui.Path
 
+Has these attributes:
+
+* antialiased
+* fill_color (from Node)
+* fill_texture
+* glow_width
+* line_color
+* line_width
+
 ### PointsNode(points, smooth=False)
 
 Arguments: list of points, if smooth is true, the line connecting the points will be a smooth spline
 
-### BoxNode(size)
+### BoxNode(size) - inherits from PathNode
 
-### CircleNode(radius)
+### CircleNode(radius) - inherits from PathNode
 
 ### SpriteNode(image)
 
-### CaneraNode
+### FieldNode
+
+Use the following class methods to create:
+
+
+### CameraNode

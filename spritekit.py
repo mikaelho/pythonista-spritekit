@@ -17,6 +17,7 @@ SKScene = ObjCClass('SKScene')
 SKNode = ObjCClass('SKNode')
 SKShapeNode = ObjCClass('SKShapeNode')
 SKSpriteNode = ObjCClass('SKSpriteNode')
+SKFieldNode = ObjCClass('SKFieldNode')
 SKCameraNode = ObjCClass('SKCameraNode')
 SKPhysicsBody = ObjCClass('SKPhysicsBody')
 SKLightNode = ObjCClass('SKLightNode')
@@ -130,11 +131,22 @@ def physics_relay(attribute_name):
   )
   return p
   
+def physics_relay_set(attribute_name):
+  '''Property creator for pass-through physics properties'''
+  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
+  p = property(
+    lambda self:
+      getattr(self.node.physicsBody(), attribute_name)(),
+    lambda self, value:
+      getattr(self.node.physicsBody(), 'set'+attribute_name[0].upper()+attribute_name[1:]+'_')(value)
+  )
+  return p
+  
 def physics_relay_readonly(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      getattr(self.node.physicsBody(), attribute_name)
+      getattr(self.node.physicsBody(), attribute_name)()
   )
   return p
   
@@ -163,7 +175,7 @@ class Node:
     
     self.paused = False
     self.speed = 1.0
-    self.scene = None
+    #self.scene = None
     
     if (self.default_physics is not None and
       not type(self) in [Scene, CameraNode]):
@@ -239,39 +251,40 @@ class Node:
     self.node.physicsBody = SKPhysicsBody.bodyWithEdgeLoopFromPath_(
       cgpath)
   
-  affected_by_gravity = physics_relay('affectedByGravity')   
-  allows_rotation = physics_relay('allowsRotation')
+  affected_by_gravity = physics_relay_set('affectedByGravity')   
+  allows_rotation = physics_relay_set('allowsRotation')
   alpha = node_relay('alpha')
   anchor_point = convert_relay('anchorPoint')
   area = physics_relay_readonly('area')
-  angular_damping = physics_relay('angularDamping')
-  angular_velocity = physics_relay('angularVelocity')
+  angular_damping = physics_relay_set('angularDamping')
+  angular_velocity = physics_relay_set('angularVelocity')
   background_color = fill_color = color_relay('fillColor')
   bbox = convert_relay_readonly('calculateAccumulatedFrame') 
-  bullet_physics = physics_relay('usesPreciseCollisionDetection')
-  contact_bitmask = physics_relay('contactTestBitMask')
+  bullet_physics = physics_relay_set('usesPreciseCollisionDetection')
+  contact_bitmask = physics_relay_set('contactTestBitMask')
+  collision_bitmask = physics_relay_set('collisionBitMask')
   
-  density = physics_relay_readonly('density')
+  density = physics_relay_set('density')
   
   @prop
   def dynamic(self, *args):
     if args:
       value = args[0]
-      self.physics_body.setDynamic(value)
+      self.physics_body.setDynamic_(value)
     else:
       return self.physics_body.isDynamic()
   
   #dynamic = physics_relay('isDynamic')
   frame = convert_relay('frame')
-  friction = physics_relay('friction')
+  friction = physics_relay_set('friction')
   hidden = node_relay('isHidden')
-  linear_damping = physics_relay('linearDamping')
-  mass = physics_relay('mass')
+  linear_damping = physics_relay_set('linearDamping')
+  mass = physics_relay_set('mass')
   name = str_relay('name')
   physics_body = node_relay('physicsBody')
   position = convert_relay('position')
   resting = physics_relay_readonly('isResting')
-  restitution = physics_relay('restitution')
+  restitution = physics_relay_set('restitution')
   rotation = node_relay('zRotation')
   scale_x = node_relay('xScale')
   scale_y = node_relay('yScale')
@@ -308,6 +321,31 @@ class PathNode(Node):
       self.node.setPhysicsBody_(physics)
     else:
       return self._path
+      
+  @prop
+  def antialiased(self, *args):
+    if args:
+      value = args[0]
+      self.physics_body.setAntialiased_(value)
+    else:
+      return self.physics_body.isAntialised()
+      
+  @prop
+  def fill_texture(self, *args):
+    if args:
+      value = args[0]
+      if value is not None:
+        value = value.texture
+      self.node.fillTexture = value
+    else:
+      value = self.node.fillTexture
+      if value is not None:
+        value = Texture(value)
+      return value
+      
+  glow_width = node_relay('glowWidth')
+  line_color = color_relay('strokeColor')
+  line_width = node_relay('lineWidth')
 
 
 class PointsNode(Node):
@@ -405,6 +443,68 @@ class SpriteNode(Node):
       self.node.physicsBody = SKPhysicsBody.bodyWithTexture_alphaThreshold_size_(texture, alpha_threshold, texture.size())
     super().__init__(**kwargs)
     
+
+class FieldNode(Node):
+  
+  def __init__(self, fieldnode):
+    self.node = fieldnode
+    super().__init__()
+  
+  @classmethod
+  def drag(cls):
+    return FieldNode(SKFieldNode.dragField())
+    
+  @classmethod
+  def electric(cls):
+    return FieldNode(SKFieldNode.electricField())
+    
+  @classmethod
+  def linear_gravity(cls, gravity_vector):
+    return FieldNode(
+      SKFieldNode.linearGravityFieldWithVector_(py_to_cg(gravity_vector)))
+    
+  @classmethod
+  def magnetic(cls):
+    return FieldNode(SKFieldNode.magneticField())
+    
+  @classmethod
+  def noise(cls, smoothness, animation_speed):
+    return FieldNode(
+      SKFieldNode.noiseFieldWithSmoothness_animationSpeed_(
+        smoothness,
+        animation_speed))
+        
+  @classmethod
+  def radial_gravity(cls):
+    return FieldNode(
+      SKFieldNode.radialGravityField())
+      
+  @classmethod
+  def spring(cls):
+    return FieldNode(
+      SKFieldNode.springField())
+      
+  @classmethod
+  def turbulence(cls, smoothness, animation_speed):
+    return FieldNode(
+      SKFieldNode.turbulenceFieldWithSmoothness_animationSpeed_(
+        smoothness,
+        animation_speed))
+        
+  @classmethod
+  def velocity_texture(cls, texture):
+    assert type(texture) == Texture
+    return FieldNode(
+      SKFieldNode.velocityFieldWithTexture_(texture.texture))
+        
+  @classmethod
+  def velocity_vector(cls, vector):
+    return FieldNode(
+      SKFieldNode.velocityFieldWithVector_(py_to_cg(vector)))
+      
+  @classmethod
+  def vortex(cls):
+    return FieldNode(SKFieldNode.vortexField())
 
 class SpriteTouch:
   
@@ -751,8 +851,8 @@ class BilliardsPhysics(BasePhysics):
   gravity = (0, 0)
   angular_damping = 0.02
   friction = 0.2
-  linear_damping = 0.02
-  restitution = 0.8
+  linear_damping = 0.2
+  restitution = 0.6
 
 def run(scene, 
   orientation=None, 
