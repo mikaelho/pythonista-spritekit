@@ -22,6 +22,7 @@ SKCameraNode = ObjCClass('SKCameraNode')
 SKPhysicsBody = ObjCClass('SKPhysicsBody')
 SKLightNode = ObjCClass('SKLightNode')
 SKTexture = ObjCClass('SKTexture')
+SKRegion = ObjCClass('SKRegion')
 
 def py_to_cg(value):
   if len(value) == 4:
@@ -58,6 +59,17 @@ def node_relay(attribute_name):
       getattr(self.node, attribute_name)(),
     lambda self, value:
       setattr(self.node, attribute_name, value)
+  )
+  return p
+  
+def node_relay_set(attribute_name):
+  '''Property creator for pass-through physics properties'''
+  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
+  p = property(
+    lambda self:
+      getattr(self.node, attribute_name)(),
+    lambda self, value:
+      getattr(self.node, set_name)(value)
   )
   return p
   
@@ -142,6 +154,18 @@ def physics_relay_set(attribute_name):
   )
   return p
   
+def boolean_relay(attribute_name):
+  '''Property creator for pass-through physics properties'''
+  get_name = 'is'+attribute_name[0].upper()+attribute_name[1:]
+  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
+  p = property(
+    lambda self:
+      getattr(self.node, get_name)(),
+    lambda self, value:
+      getattr(self.node, set_name)(value)
+  )
+  return p
+  
 def physics_relay_readonly(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
@@ -178,7 +202,8 @@ class Node:
     #self.scene = None
     
     if (self.default_physics is not None and
-      not type(self) in [Scene, CameraNode]):
+      not isinstance(self,
+        (Scene, CameraNode, FieldNode))):
       for key in dir(self.default_physics()):
         if not key.startswith('_'):
           setattr(self, key, getattr(self.default_physics, key))
@@ -261,6 +286,7 @@ class Node:
   background_color = fill_color = color_relay('fillColor')
   bbox = convert_relay_readonly('calculateAccumulatedFrame') 
   bullet_physics = physics_relay_set('usesPreciseCollisionDetection')
+  category_bitmask = physics_relay_set('categoryBitMask')
   contact_bitmask = physics_relay_set('contactTestBitMask')
   collision_bitmask = physics_relay_set('collisionBitMask')
   
@@ -270,9 +296,9 @@ class Node:
   def dynamic(self, *args):
     if args:
       value = args[0]
-      self.physics_body.setDynamic_(value)
+      self.body.setDynamic_(value)
     else:
-      return self.physics_body.isDynamic()
+      return self.body.isDynamic()
   
   #dynamic = physics_relay('isDynamic')
   frame = convert_relay('frame')
@@ -281,7 +307,7 @@ class Node:
   linear_damping = physics_relay_set('linearDamping')
   mass = physics_relay_set('mass')
   name = str_relay('name')
-  physics_body = node_relay('physicsBody')
+  body = node_relay('physicsBody')
   position = convert_relay('position')
   resting = physics_relay_readonly('isResting')
   restitution = physics_relay_set('restitution')
@@ -505,6 +531,69 @@ class FieldNode(Node):
   @classmethod
   def vortex(cls):
     return FieldNode(SKFieldNode.vortexField())
+    
+  enabled = boolean_relay('enabled')
+  exclusive = boolean_relay('exclusive')
+  falloff = node_relay('falloff')
+  region = node_relay_set('region')
+  strength = node_relay('strength')
+  
+  @prop
+  def region(self, *args):
+    if args:
+      value = args[0]
+      assert type(value) == Region
+      self.node.setRegion_(value.region)
+    else:
+      return Region(self.node.region)
+  
+class Region:
+  
+  def __init__(self, region):
+    if type(region) == Region:
+      region = region.region
+    self.region = region
+    
+  @classmethod
+  def infinite(cls):
+    return Region(SKRegion.infiniteRegion())
+    
+  @classmethod
+  def size(cls, size):
+    size = CGSize(*size)
+    return Region(SKRegion.alloc().initWithSize_(size))
+    
+  @classmethod
+  def radius(cls, radius):
+    return Region(SKRegion.alloc().initWithRadius_(radius))
+    
+  @classmethod
+  def path(cls, path):
+    assert type(path) == ui.Path
+    return Region(SKRegion.alloc().initWithPath_(path.objc_instance.CGPath()))
+
+  def inverse(self):
+    return Region(self.region.inverseRegion())
+    
+  def difference(self, other):
+    assert type(other) == Region
+    return Region(self.region.regionByDifferenceFromRegion_(other.region))
+    
+  def intersection(self, other):
+    assert type(other) == Region
+    return Region(self.region.regionByIntersectionWithRegion_(other.region))
+
+  def union(self, other):
+    assert type(other) == Region
+    return Region(self.region.regionByUnionWithRegion_(other.region))
+    
+  @property
+  def path(self):
+    return ui.Path()._initWithCGMutablePath_(self.region.path())
+    
+  def contains(self, point):
+    return self.region.containsPoint(py_to_cg(point))
+    
 
 class SpriteTouch:
   
@@ -542,11 +631,16 @@ def touchesMoved_withEvent_(_self, _cmd, _touches, event):
 def touchesEnded_withEvent_(_self, _cmd, _touches, event):
   handle_touch(_self, _cmd, _touches, event, 'touch_ended')
 
-def update_(_self, _cmd, current_time):
+def update_(_self, _cmd, current_time): 
+  if not 'ObjCInstance' in globals():
+    return
   scene = ObjCInstance(_self)
+  if not hasattr(scene, 'py_node'):
+    scene.paused = True
+    return
   node = scene.py_node
   if hasattr(node, 'update'):
-    node.update(current_time)
+    node.update()
 
 def didChangeSize_(_self,_cmd, _oldSize):
   scene = ObjCInstance(_self)
@@ -558,16 +652,20 @@ def didChangeSize_(_self,_cmd, _oldSize):
     if hasattr(scene.py_node, 'layout'):
       scene.py_node.layout()
 
-def didBeginContact_(_self,_cmd,contact):
-  #print("Contacting")
-  pass
+def didBeginContact_(_self, _cmd, _contact):
+  scene = ObjCInstance(_self)
+  contact = ObjCInstance(_contact)
+  if hasattr(scene, 'py_node'):
+    node_a = contact.bodyA().node().py_node
+    node_b = contact.bodyB().node().py_node
+    scene.py_node.contact(node_a, node_b)
 
 
 SpriteScene = create_objc_class(
 'SpriteScene',
 SKScene,
 methods=[
-#update_,
+update_,
 didChangeSize_,
 touchesBegan_withEvent_,
 touchesMoved_withEvent_,
@@ -655,6 +753,9 @@ class Scene(Node):
       self.node.setCamera_(value.node)
     else:
       return self.node.camera().py_node
+      
+  def contact(self, node_a, node_b):
+    pass
     
   @prop
   def edges(self, *args):
@@ -851,7 +952,7 @@ class BilliardsPhysics(BasePhysics):
   gravity = (0, 0)
   angular_damping = 0.02
   friction = 0.2
-  linear_damping = 0.2
+  linear_damping = 0.3
   restitution = 0.6
 
 def run(scene, 
