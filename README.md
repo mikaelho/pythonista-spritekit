@@ -122,7 +122,26 @@ Methods:
 
 Create a region to constrain a field effect with one of the following class methods:
 
-* infinite
-* size - centered on the origin
-* radius
+* Creating a region
+	* infinite
+	* size - centered on the origin
+	* radius
+	* path
+* With another region
+	* inverse
+	* difference
+	* intersection
+	* union
+
+Regions have the following attributes:
+
 * path
+* contains(point)
+
+### Constraint
+
+
+
+### Range
+
+
