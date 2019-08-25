@@ -4,6 +4,17 @@ If you are familiar with Pythonista scene module, many things will feel familiar
 
 ## Supported nodes and attributes
 
+* Scene
+* Node
+* PathNode
+* PointsNode
+* BoxNode
+* CircleNode
+* SpriteNode
+* CameraNode
+* FieldNode
+
+
 ### Node
 
 All other nodes are inherited from Node and share its attributes. All writeable attributes can also be provided at initialization.
@@ -68,7 +79,50 @@ Arguments: list of points, if smooth is true, the line connecting the points wil
 
 ### FieldNode
 
-Use the following class methods to create:
+Use the following class methods to create field nodes:
 
+* drag
+* electric
+* linear_gravity
+* magnetic
+* noise
+* radial_gravity
+* spring
+* turbulence
+* velocity_texture
+* velocity_vector
+* vortex
+
+FieldNodes have the following attributes:
+
+* enabled - default True
+* exclusive - default False
+* falloff
+* strength
+* region - see Region in supporting classes
 
 ### CameraNode
+
+## Supporting classes
+
+* Texture
+* Region
+* Constraint
+* Range
+
+### Texture
+
+Initializer accepts image name, image path, ui.Image, Texture or SKTexture.
+
+Methods:
+
+* crop(rect) - rectangle in unit space (0.0-1.0). Texture is not copied.
+
+### Region
+
+Create a region to constrain a field effect with one of the following class methods:
+
+* infinite
+* size - centered on the origin
+* radius
+* path

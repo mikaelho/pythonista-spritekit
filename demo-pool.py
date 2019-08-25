@@ -15,7 +15,7 @@ class PoolScene(Scene):
     ball = a if b.name == 'sensor' else b
     to_remove.append(ball)
     
-  def update(self):
+  def update(self, ct):
     global pocketed, to_remove
     
     for ball in to_remove:
@@ -26,7 +26,7 @@ class PoolScene(Scene):
         ball.collision_bitmask = 2
       else:
         ball.position = (
-          -141 + len(pocketed) * (2 * ball_radius + 5),
+          -150 + len(pocketed) * (2 * ball_radius + 2),
           290
         )
         ball.velocity = (0,0)

@@ -4,6 +4,7 @@ import ui
 from objc_util import *
 from objc_util import ObjCInstanceMethodProxy
 from scene import Rect, Size
+import list_callback
 
 try:
   import pygestures
@@ -12,6 +13,20 @@ except ModuleNotFoundError: pass
 
 load_framework('SpriteKit')
 
+SK_classes = [
+  'SKView', 'SKScene', 'SKNode',
+  'SKShapeNode', 'SKSpriteNode',
+  'SKPhysicsBody',
+  'SKCameraNode', 'SKLightNode',
+  'SKTexture',
+  'SKFieldNode', 'SKRegion',
+  'SKConstraint', 'SKRange',
+]
+
+for class_name in SK_classes:
+  globals()[class_name] = ObjCClass(class_name)
+
+'''
 SKView = ObjCClass('SKView')
 SKScene = ObjCClass('SKScene')
 SKNode = ObjCClass('SKNode')
@@ -23,6 +38,9 @@ SKPhysicsBody = ObjCClass('SKPhysicsBody')
 SKLightNode = ObjCClass('SKLightNode')
 SKTexture = ObjCClass('SKTexture')
 SKRegion = ObjCClass('SKRegion')
+SKConstraint = ObjCClass('SKConstraint') 
+SKRange = ObjCClass('SKRange')
+'''
 
 def py_to_cg(value):
   if len(value) == 4:
@@ -192,6 +210,7 @@ class Node:
   def __init__(self, **kwargs):
     self._parent = None
     self._children = []
+    self.constraints = list_callback.NotifyList(callback=self._constraint_update)
 
     if not hasattr(self, 'node'):
       self.node = SKNode.alloc().init()
@@ -232,15 +251,13 @@ class Node:
   def children(self):
     return self._children
   
-  '''  
-  @prop
-  def position(self, *args):
-    if args:
-      a = args[0]
-      self.node.position = CGPoint(a[0], a[1])
-    else:
-      return ui.Point(self.node.position.x, self.node.position.y)
-  '''
+  def add_constraint(self, constraint):
+    self.constraints.append(constraint)
+    
+  def _constraint_update(self):
+    sk_constraints = [
+      c.constraint for c in self.constraints]
+    self.node.setConstraints_(sk_constraints)
       
   def convert_point_to(self, point, node):
     return cg_to_py(
@@ -535,7 +552,6 @@ class FieldNode(Node):
   enabled = boolean_relay('enabled')
   exclusive = boolean_relay('exclusive')
   falloff = node_relay('falloff')
-  region = node_relay_set('region')
   strength = node_relay('strength')
   
   @prop
@@ -594,6 +610,154 @@ class Region:
   def contains(self, point):
     return self.region.containsPoint(py_to_cg(point))
     
+    
+class Constraint:
+  
+  def __init__(self, constraint):
+    self.constraint = constraint
+    
+  @prop
+  def enabled(self, *args):
+    if args:
+      value = args[0]
+      self.constraint.setEnabled_(value)
+    else:
+      return self.constraint.enabled()
+      
+  @prop
+  def reference_node(self, *args):
+    if args:
+      value = args[0]
+      assert isinstance(value, Node)
+      self.constraint.setReferenceNode_(value, node)
+    else:
+      return self.constraint.referenceNode().py_node
+  
+  @classmethod
+  def distance_to_node(cls, node, distance):
+    assert isinstance(node, Node)
+    assert type(distance) == Range
+    return Constraint(SKConstraint.distance_toNode_(
+      distance.range, node.node))
+  
+  @classmethod
+  def distance_to_point(cls, point, distance):
+    point = py_to_cg(point)
+    assert type(distance) == Range
+    return Constraint(SKConstraint.distance_toPoint_(
+      distance.range, point))
+  
+  @classmethod
+  def distance_to_point_in_node(cls, point, node, distance):
+    point = py_to_cg(point)
+    assert isinstance(node, Node)
+    assert type(distance) == Range
+    return Constraint(SKConstraint.distance_toPoint_inNode_(
+      distance.range, point, node.node))
+  
+  @classmethod
+  def orient_to_node(cls, node, offset):
+    assert isinstance(node, Node)
+    assert type(offset) == Range
+    return Constraint(SKConstraint.orientToNode_offset_(
+      node.node, offset.range))
+      
+  @classmethod
+  def orient_to_point(cls, point, offset):
+    point = py_to_cg(point)
+    assert type(offset) == Range
+    return Constraint(SKConstraint.orientToPoint_offset_(
+      point, offset.range))
+      
+  @classmethod
+  def orient_to_point_in_node(cls, point, node, offset):
+    point = py_to_cg(point)
+    assert isinstance(node, Node)
+    assert type(offset) == Range
+    return Constraint(SKConstraint.orientToPoint_inNode_offset_(
+      point, node.node, offset.range))
+  
+  @classmethod
+  def position(cls, x_range, y_range):
+    assert type(x_range) == Range
+    assert type(y_range) == Range
+    return Constraint(SKConstraint.positionX_Y_(
+      x_range.range, y_range.range))
+      
+  @classmethod
+  def position_x(cls, x_range):
+    assert type(x_range) == Range
+    return Constraint(SKConstraint.positionX_(
+      x_range.range))
+      
+  @classmethod
+  def position_y(cls, y_range):
+    assert type(y_range) == Range
+    return Constraint(SKConstraint.positionY_(
+      y_range.range))
+      
+  @classmethod
+  def rotation(cls, range):
+    assert type(range) == Range
+    return Constraint(SKConstraint.zRotation_(
+      range.range))
+  
+  @classmethod
+  def scale(cls, scale_range):
+    assert type(scale_range) == Range
+    return Constraint(SKConstraint.scaleX_scaleY_(
+      scale_range.range, scale_range.range))
+      
+  @classmethod
+  def scale_x(cls, x_range):
+    assert type(x_range) == Range
+    return Constraint(SKConstraint.scaleX_(
+      x_range.range))
+      
+  @classmethod
+  def scale_y(cls, y_range):
+    assert type(y_range) == Range
+    return Constraint(SKConstraint.scaleY_(
+      y_range.range))
+
+  
+class Range:
+  
+  def __init__(self, range):
+    self.range = range
+    
+  @property
+  def upper_limit(self):
+    return self.range.upperLimit()
+    
+  @property
+  def lower_limit(self):
+    return self.range.lowerLimit()
+    
+  @classmethod
+  def constant(cls, value):
+    return Range(SKRange.rangeWithConstantValue_(value))
+    
+  @classmethod
+  def lower(cls, limit):
+    return Range(SKRange.rangeWithLowerLimit_(limit))
+    
+  @classmethod
+  def upper(cls, limit):
+    return Range(SKRange.rangeWithUpperLimit_(limit))
+    
+  @classmethod
+  def limits(cls, lower, upper):
+    return Range(SKRange.rangeWithLowerLimit_upperLimit_(lower, upper))
+    
+  @classmethod
+  def no_limits(cls):
+    return Range(SKRange.rangeWithNoLimits())
+    
+  @classmethod
+  def variance(cls, value, variance):
+    return Range(SKRange.rangeWithValue_variance_(value, variance))
+    
 
 class SpriteTouch:
   
@@ -640,7 +804,7 @@ def update_(_self, _cmd, current_time):
     return
   node = scene.py_node
   if hasattr(node, 'update'):
-    node.update()
+    node.update(current_time)
 
 def didChangeSize_(_self,_cmd, _oldSize):
   scene = ObjCInstance(_self)
@@ -956,10 +1120,11 @@ class BilliardsPhysics(BasePhysics):
   linear_damping = 0.3
   restitution = 0.6
 
+@on_main_thread
 def run(scene, 
   orientation=None, 
   frame_interval=1,
-  anti_alias=False,
+  antialias=False,
   show_fps=False,
   multi_touch=True):
   scene.view.present()
@@ -1114,6 +1279,13 @@ if __name__ == '__main__':
     position=(170,100),
     velocity=(0,100),
     parent=scene)
+    
+  scene.camera = CameraNode(parent=scene)
+  scene.camera.add_constraint(
+    Constraint.distance_to_node(
+      ship,
+      Range.constant(0))
+  )
     
   scene.view.present()
   
