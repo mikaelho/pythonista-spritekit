@@ -74,6 +74,19 @@ def node_relay(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
+      (getattr(self.node, attribute_name)() 
+      if type(getattr(self.node, attribute_name)) == ObjCInstanceMethodProxy
+      else 
+      getattr(self.node, attribute_name)),
+    lambda self, value:
+      setattr(self.node, attribute_name, value)
+  )
+  return p
+  
+def node_relay_prop(attribute_name):
+  '''Property creator for pass-through physics properties'''
+  p = property(
+    lambda self:
       getattr(self.node, attribute_name)(),
     lambda self, value:
       setattr(self.node, attribute_name, value)
@@ -221,8 +234,9 @@ class Node:
     #self.scene = None
     
     if (self.default_physics is not None and
-      not isinstance(self,
-        (Scene, CameraNode, FieldNode))):
+        self.body is not None and
+        not isinstance(self,
+          (Scene, CameraNode, FieldNode))):
       for key in dir(self.default_physics()):
         if not key.startswith('_'):
           setattr(self, key, getattr(self.default_physics, key))
@@ -320,7 +334,7 @@ class Node:
   #dynamic = physics_relay('isDynamic')
   frame = convert_relay('frame')
   friction = physics_relay_set('friction')
-  hidden = node_relay('isHidden')
+  hidden = boolean_relay('hidden')
   linear_damping = physics_relay_set('linearDamping')
   mass = physics_relay_set('mass')
   name = str_relay('name')
@@ -341,6 +355,7 @@ class PathNode(Node):
   
   def __init__(self, path=ui.Path(), **kwargs):
     self.node = None
+    self.no_body = kwargs.pop('no_body', False)
     self.path = path
     super().__init__(**kwargs)
     
@@ -354,6 +369,8 @@ class PathNode(Node):
         self.node = TouchShapeNode.shapeNodeWithPath_(cgpath)
       else:
         self.node.path = cgpath
+      if self.no_body:
+        return 
       physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
       if physics is None:
         #texture = view.skview.textureFromNode_(self.node)
@@ -389,6 +406,7 @@ class PathNode(Node):
   glow_width = node_relay('glowWidth')
   line_color = color_relay('strokeColor')
   line_width = node_relay('lineWidth')
+  line_length = node_relay('lineLength')
 
 
 class PointsNode(Node):

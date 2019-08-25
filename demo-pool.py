@@ -10,6 +10,29 @@ to_remove = []
 
 class PoolScene(Scene):
   
+  def touch_moved(self, touch):
+    if self.cue_ball.collision_bitmask == 1:
+      p = ui.Path()
+      p.line_to(*(self.cue_ball.position - touch.location))
+      self.power_indicator.path = p
+      self.power_indicator.position = touch.location
+      self.power_indicator.hidden = False
+    else:
+      self.cue_ball.position = touch.location
+  
+  def touch_ended(self, touch):
+    if self.cue_ball.collision_bitmask == 1:
+      t = self.cue_ball.position - touch.location
+      self.cue_ball.velocity = (3*t.x, 3*t.y)
+      self.power_indicator.hidden = True
+    else:
+      play_area = Rect(-118, -228, 236, 456)
+      if play_area.contains_point(touch.location):
+        self.cue_ball.collision_bitmask = 1
+        self.cue_ball.category_bitmask = 1
+      else:
+        self.cue_ball.position = (0, -290)
+  
   def contact(self, a, b):
     global to_remove
     ball = a if b.name == 'sensor' else b
@@ -31,7 +54,6 @@ class PoolScene(Scene):
         )
         ball.velocity = (0,0)
         pocketed.append(ball)
-      
     to_remove.clear()
         
 
@@ -155,44 +177,27 @@ for angle, color in balls:
     position=(x,y),
   )
 
-run(scene)
+p = ui.Path()
+p.line_to(10,10)
+scene.power_indicator = PathNode(p,
+  hidden=True,
+  no_body=True,
+  line_color=(1,1,1,0.3),
+  line_width=3,
+  glow_width=2,
+  parent=scene
+)
 
 class CueBall(CircleNode):
-  
-  def __init__(self, **kwargs):
-    super().__init__(**kwargs)
-    self.touch_enabled = True
-    arrow = 'iob:ios7_arrow_thin_up_32'
+  pass
     
-  def touch_moved(self, touch):
-    if self.collision_bitmask == 1:
-      return
-    self.position = self.convert_point_to(touch.location, self.scene)
-  
-  def touch_ended(self, touch):
-    touch_pos = self.convert_point_to(touch.location, self.scene)
-    if self.collision_bitmask == 1:
-      t = self.position - touch_pos
-      self.velocity = (3*t.x, 3*t.y)
-    else:
-      play_area = Rect(-118, -228, 236, 456)
-      if play_area.contains_point(touch_pos):
-        self.collision_bitmask = 1
-        self.category_bitmask = 1
-      else:
-        self.position = (0, -290)
-        
-        
-    
-cue_ball = CueBall(
+scene.cue_ball = CueBall(
   radius=ball_radius,
   fill_color='white',
   parent=scene,
   category_bitmask=1,
   collision_bitmask=1,
   position=(0, -125),
-  #velocity=(random.randint(-10,10), 400),
 )
   
-#print(dir(cue_ball.node.physicsBody()))
-
+run(scene)
