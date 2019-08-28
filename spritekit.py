@@ -21,37 +21,23 @@ SK_classes = [
   'SKTexture',
   'SKFieldNode', 'SKRegion',
   'SKConstraint', 'SKRange',
+  'SKTextureAtlas'
 ]
 
 for class_name in SK_classes:
   globals()[class_name] = ObjCClass(class_name)
 
-'''
-SKView = ObjCClass('SKView')
-SKScene = ObjCClass('SKScene')
-SKNode = ObjCClass('SKNode')
-SKShapeNode = ObjCClass('SKShapeNode')
-SKSpriteNode = ObjCClass('SKSpriteNode')
-SKFieldNode = ObjCClass('SKFieldNode')
-SKCameraNode = ObjCClass('SKCameraNode')
-SKPhysicsBody = ObjCClass('SKPhysicsBody')
-SKLightNode = ObjCClass('SKLightNode')
-SKTexture = ObjCClass('SKTexture')
-SKRegion = ObjCClass('SKRegion')
-SKConstraint = ObjCClass('SKConstraint') 
-SKRange = ObjCClass('SKRange')
-'''
 
 def py_to_cg(value):
-  if len(value) == 4:
+  if type(value) == Size:
+    w, h = value
+    return CGSize(w, h)
+  elif len(value) == 4:
     x, y, w, h = value
     return CGRect(CGPoint(x, y), CGSize(w,h))
   elif len(value) == 2:
     x, y = value
     return CGPoint(x, y)
-  elif type(value) == Size:
-    w, h = value
-    return CGSize(w, h)
     
 def cg_to_py(value):
   if type(value) == ObjCInstanceMethodProxy:
@@ -70,21 +56,21 @@ def cg_to_py(value):
 def prop(func):
   return property(func, func)
   
+def method_or_not(value):
+  return value() if type(value) == ObjCInstanceMethodProxy else value
+  
 def node_relay(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      (getattr(self.node, attribute_name)() 
-      if type(getattr(self.node, attribute_name)) == ObjCInstanceMethodProxy
-      else 
-      getattr(self.node, attribute_name)),
+      method_or_not(getattr(self.node, attribute_name)),
     lambda self, value:
       setattr(self.node, attribute_name, value)
   )
   return p
   
+'''
 def node_relay_prop(attribute_name):
-  '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
       getattr(self.node, attribute_name)(),
@@ -92,6 +78,7 @@ def node_relay_prop(attribute_name):
       setattr(self.node, attribute_name, value)
   )
   return p
+'''
   
 def node_relay_set(attribute_name):
   '''Property creator for pass-through physics properties'''
@@ -115,7 +102,6 @@ def convert_relay(attribute_name):
   return p
   
 def convert_relay_readonly(attribute_name):
-  '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
       cg_to_py(getattr(self.node, attribute_name))
@@ -123,10 +109,9 @@ def convert_relay_readonly(attribute_name):
   return p
   
 def str_relay(attribute_name):
-  '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      str(getattr(self.node, attribute_name)()),
+      str(method_or_not(getattr(self.node, attribute_name))),
     lambda self, value:
       setattr(self.node, attribute_name, value)
   )
@@ -168,7 +153,7 @@ def physics_relay(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      getattr(self.node.physicsBody(), attribute_name),
+      method_or_not(getattr(self.node.physicsBody(), attribute_name)),
     lambda self, value:
       setattr(self.node.physicsBody(), attribute_name, value)
   )
@@ -208,8 +193,9 @@ def physics_relay_readonly(attribute_name):
 def vector_physics_relay(attribute_name):
   p = property(
     lambda self:
-      (getattr(self.node.physicsBody(), attribute_name)[0], 
-      getattr(self.node.physicsBody(), attribute_name)[1]),
+      cg_to_py(method_or_not(getattr(self.node.physicsBody(), attribute_name))),
+      #(getattr(self.node.physicsBody(), attribute_name)[0], 
+      #getattr(self.node.physicsBody(), attribute_name)[1]),
     lambda self, value:
       setattr(self.node.physicsBody(), attribute_name, CGVector(*value))
   )
@@ -306,6 +292,18 @@ class Node:
     cgpath = path.objc_instance.CGPath()
     self.node.physicsBody = SKPhysicsBody.bodyWithEdgeLoopFromPath_(
       cgpath)
+      
+  def as_texture(self):
+    return Texture.from_node(self)
+  
+  def apply_angular_impulse(self, impulse):
+    self.body.applyAngularImpulse_(impulse)
+  
+  def apply_force(self, vector):
+    self.body.applyForce_(CGPoint(*vector))
+  
+  def apply_torque(self, torque):
+    self.body.applyTorque_(torque)
   
   affected_by_gravity = physics_relay_set('affectedByGravity')   
   allows_rotation = physics_relay_set('allowsRotation')
@@ -331,7 +329,6 @@ class Node:
     else:
       return self.body.isDynamic()
   
-  #dynamic = physics_relay('isDynamic')
   frame = convert_relay('frame')
   friction = physics_relay_set('friction')
   hidden = boolean_relay('hidden')
@@ -339,6 +336,7 @@ class Node:
   mass = physics_relay_set('mass')
   name = str_relay('name')
   body = node_relay('physicsBody')
+  pinned = physics_relay('pinned')
   position = convert_relay('position')
   resting = physics_relay_readonly('isResting')
   restitution = physics_relay_set('restitution')
@@ -353,10 +351,11 @@ class Node:
 
 class PathNode(Node):
   
-  def __init__(self, path=ui.Path(), **kwargs):
-    self.node = None
-    self.no_body = kwargs.pop('no_body', False)
-    self.path = path
+  def __init__(self, path=None, **kwargs):
+    if path is not None:
+      self.node = None
+      self.no_body = kwargs.pop('no_body', False)
+      self.path = path
     super().__init__(**kwargs)
     
   @prop
@@ -371,16 +370,93 @@ class PathNode(Node):
         self.node.path = cgpath
       if self.no_body:
         return 
+      '''
+      x,y,w,h = self.frame
+      with ui.ImageContext(w,h, scale=1) as ctx:
+        with ui.GState():
+          ui.concat_ctm(ui.Transform.translation(0,h)) # Position for flip
+          ui.concat_ctm(ui.Transform.scale(1,-1)) # Flip vertical
+          ui.concat_ctm(ui.Transform.translation(-x,-y)) # Correct origin
+
+          ui.set_color('white')
+          path.stroke()
+          img = ctx.get_image()
+          
+      atlas = SKTextureAtlas.atlasWithDictionary_(
+        {'default': img.objc_instance})
+      '''
+      #img.show()
+      #return 
+      '''
       physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
       if physics is None:
+        reverse_path = path.objc_instance.bezierPathByReversingPath().CGPath()
+        physics = SKPhysicsBody.bodyWithPolygonFromPath_(reverse_path)
+      '''
+      #if physics is None:
         #texture = view.skview.textureFromNode_(self.node)
-        texture = SKView.alloc().init().textureFromNode_(self.node)
-        physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+
+      #py_texture = Texture(img)
+      #texture = py_texture.texture
+      
+      #texture = SKView.alloc().init().textureFromNode_(self.node)
+      
+      #texture = atlas.textureNamed_('default')
+      #physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+      
+      '''
       if physics is None:
         raise RuntimeError(f'Could not create physics body for path {path}.')
-      self.node.setPhysicsBody_(physics)
+      '''
+      
+      #reverse_path = path.objc_instance.bezierPathByReversingPath().CGPath()
+      self.node.setPhysicsBody_(SKPhysicsBody.bodyWithEdgeChainFromPath_(cgpath))
     else:
       return self._path
+  
+  @classmethod
+  def quadcurve(cls, points, path=None):
+  
+    def control_point(p1, p2):
+      #return (p1+p2)/2
+      control = (p1+p2)/2
+      diff_y = abs(p2.y - control.y)
+      if p1.y < p2.y:
+        control.y += diff_y
+      elif p1.y > p2.y:
+        control.y -= diff_y
+      return control
+  
+    if len(points) < 2: return
+    path = path or ui.Path()
+    points = [ui.Point(*p) for p in points]
+    p1 = points[0]
+    #path.move_to(*p1)
+    if len(points) == 2:
+      path.line_to(*points[1])
+      return path
+    for i in range(len(points)):
+      mid = (p1+points[i])/2
+      path.add_quad_curve(
+        *mid, *control_point(mid, p1))
+      path.add_quad_curve(
+        *points[i], *control_point(mid, points[i]))
+      p1 = points[i]
+    return path
+  
+  @classmethod    
+  def bezier(cls, points, p=None, start=None, end=None):
+    '''Based on the given points, adds a cubic Bézier curve to the given path,
+    or returns a new path is none is given.
+    start and end are vectors that give the starting and ending slopes;
+    next/prevopus points are used if these are not given.'''
+    assert len(points) > 1
+    p = p or ui.Path()
+    if start is None:
+      start = points[1]-points[0]
+    if end is None:
+      end = points[-2]-points[-1]
+    
       
   @prop
   def antialiased(self, *args):
@@ -470,15 +546,19 @@ class CircleNode(PathNode):
   
   def __init__(self, radius=50, **kwargs):
     #self.node = None
-    r = self._radius = radius
-    '''
-    self.node = node = SKShapeNode.shapeNodeWithCircleOfRadius_(radius)
-    node.physicsBody = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
+    #r = self._radius = radius
+    
+    self.node = SKShapeNode.shapeNodeWithCircleOfRadius_(radius)
+    self.body = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
+    
+    super().__init__(None, **kwargs)
+      
     '''
     super().__init__(path=ui.Path.oval(-r, -r, 2*r, 2*r), **kwargs)
     #self.anchor_point = (0.5, 0.)
     #print(self.anchor_point)
-    
+    '''
+  '''
   @prop
   def radius(self, *args):
     if args:
@@ -486,11 +566,23 @@ class CircleNode(PathNode):
       self.path = ui.Path.oval(-r, -r, 2*r, 2*r)
     else:
       return self._radius
+  '''
+    
+class EdgePathNode(Node):
+  
+  def __init__(self, path, **kwargs):
+    assert type(path) == ui.Path
+    super().__init__(**kwargs)
+    cgpath = path.objc_instance.CGPath()
+    physics = SKPhysicsBody.bodyWithEdgeChainFromPath_(cgpath)
+    if physics is None:
+      raise RuntimeError('Could not create the edge. Did you start the path with move_to? Must start with a line from (0,0).')
+    self.body = physics
     
     
 class SpriteNode(Node):
   
-  def __init__(self, image, alpha_threshold=None, **kwargs):
+  def __init__(self, image,  alpha_threshold=None, **kwargs):
     image_texture = Texture(image)
     texture = image_texture.texture
     '''
@@ -504,6 +596,9 @@ class SpriteNode(Node):
       self.node.physicsBody = SKPhysicsBody.bodyWithTexture_alphaThreshold_size_(texture, alpha_threshold, texture.size())
     super().__init__(**kwargs)
     
+  @property
+  def texture(self):
+    return Texture(self.node.texture())
 
 class FieldNode(Node):
   
@@ -1162,6 +1257,10 @@ class Texture:
   def crop(self, rect):
     return Texture(SKTexture.textureWithRect_inTexture_(py_to_cg(rect), self.texture))
     
+  @classmethod
+  def from_node(cls, node):
+    return Texture(SKView.alloc().init().textureFromNode_(node.node))
+    
 
 if __name__ == '__main__':
   
@@ -1249,12 +1348,15 @@ if __name__ == '__main__':
       
     def create_polygon_shape(self, position):
       points = self.get_points()
+      '''
       p = ui.Path()
       for i, point in enumerate(points):
         if i == 0:
           p.move_to(*point)
         else:
           p.line_to(*point)
+      '''
+      p = PathNode.quadcurve(points)
       p.close()
       return PathNode(path=p, position=position)
   
@@ -1269,9 +1371,47 @@ if __name__ == '__main__':
   scene.view.present(hide_title_bar=True)
   '''
   
+  def get_points():
+    r = random.randint(40, 80)
+    magnitude = random.randint(
+      int(.3*r), int(.7*r))
+      
+    points = []
+    for a in range(0, 340, 20):
+      magnitude = max(
+        min(
+          magnitude + random.randint(
+            int(-.2*r), int(.2*r)), 
+          r),
+        .2*r)
+      point = vector.Vector(magnitude, 0)
+      point.degrees = a
+      points.append(tuple(point))
+    points.append(points[0])
+    return points
+    
+  def create_polygon_shape(position):
+    points = get_points()
+    '''
+    p = ui.Path()
+    for i, point in enumerate(points):
+      if i == 0:
+        p.move_to(*point)
+      else:
+        p.line_to(*point)
+    '''
+    p = PathNode.quadcurve(points)
+    #p.close()
+    return PathNode(path=p, position=position)
+  
+  def create_circle_shape(point):
+    radius = random.randint(25, 45)
+    return CircleNode(radius, position=point)
+  
   scene = Scene(
     background_color='black',     #1
-    physics=SpacePhysics)         #2
+    physics=SpacePhysics,
+    physics_debug=True)         #2
     
   class SpaceRock(SpriteNode):    #3
     
@@ -1297,6 +1437,14 @@ if __name__ == '__main__':
     position=(170,100),
     velocity=(0,100),
     parent=scene)
+    
+  wierd = create_circle_shape(point=(300, 300))
+  wierd.fill_color = 'grey'
+  wierd.parent = scene
+    
+  wierd = create_polygon_shape(position=(200, 300))
+  wierd.fill_color = 'grey'
+  wierd.parent = scene
     
   scene.camera = CameraNode(parent=scene)
   scene.camera.add_constraint(
