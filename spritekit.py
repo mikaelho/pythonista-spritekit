@@ -346,15 +346,14 @@ class PointsNode(Node):
 
 class BoxNode(PathNode):
   
-  def __init__(self, size=(100,100), **kwargs):
-    #self.node = None
-    w,h = self._size = size
+  def __init__(self, size=(100,100), **kwargs):    
+    size = py_to_cg(Size(*size))
+    self.node = node = SKShapeNode.shapeNodeWithRectOfSize_(size)
     
-    '''
-    self.node = node = SKShapeNode.shapeNodeWithRectOfSize_(rect)
-    node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(rect)
-    '''
-    super().__init__(path=ui.Path.rect(-w/2, -h/2, w, h), **kwargs)
+    if not kwargs.pop('no_body', False):
+      node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
+    
+    super().__init__(None, **kwargs)
     
   @prop
   def size(self, *args):
@@ -937,7 +936,8 @@ class Scene(Node):
       value = args[0]
       self.node.setCamera_(value.node)
     else:
-      return self.node.camera().py_node
+      sk_camera = self.node.camera()
+      return None if sk_camera is None else  sk_camera.py_node
       
   def contact(self, node_a, node_b):
     pass
