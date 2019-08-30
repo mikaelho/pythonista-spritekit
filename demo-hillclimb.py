@@ -17,11 +17,20 @@ class ScrollingScene(Scene):
     self.baseline = -self.max_variance/2
     self.camera = CameraNode(parent=self)
     self.anchor_point = (0, 0.5)
+    
     self.gas = False
     self.car = None
     self.current_terrain = None
     self.next_terrain = None
     self.prev_terrain = None
+    self.prev_x = 0
+  
+    self.score = LabelNode('Score', 
+      anchor_point=(1,1),
+      camera_anchor=Anchor((1,0.7), (-20,-20)),
+      alignment = LabelNode.ALIGN_RIGHT,
+      vertical_alignment = LabelNode.ALIGN_TOP,
+      parent=self.camera)
     
   def touch_began(self, t):
     self.gas = True
@@ -37,6 +46,10 @@ class ScrollingScene(Scene):
       self.camera.position = (
         x + w/2, y
       )
+      if x > self.prev_x:
+        score = str(int(round(x,-2))) + ' m'
+        self.score.text = score
+        self.prev_x = x
     
     if self.gas:
       self.car.apply_force((200,0))
@@ -55,7 +68,6 @@ class ScrollingScene(Scene):
         0
       )
       if self.prev_terrain is not None:
-        #destroy
         self.prev_terrain = None
         
     if (self.next_terrain is not None
@@ -104,7 +116,6 @@ class ScrollingScene(Scene):
       top_surface,
       parent=path_node
     )
-    #path_node.node.setPhysicsBody_(SKPhysicsBody.bodyWithEdgeChainFromPath_(top_surface.objc_instance.CGPath()))
     
     surface_node.friction = 1.0
 
@@ -115,24 +126,16 @@ scene = ScrollingScene()
 terrain = scene.current_terrain = scene.generate_terrain(initial=True)
 w,h = terrain.size
 terrain.position = (
-  0, -h/2)
-
-#terrain.position = (0,0)
-
-run(scene)
-
-w,h = ui.get_screen_size()
+  0, w/2)
 
 scene.car = SpriteNode('images/car.png',
   fill_color='white',
-  position = (w/4,100),
+  position = (100,100),
   velocity=(500,0),
   density=.5,
-  #dynamic=False,
   parent=scene)
   
 scene.back_wheel = SpriteNode('images/wheel.png',
-#dynamic=False,
 position=(-75,-35),
 pinned=True,
 friction=1.0,
@@ -140,15 +143,12 @@ size=Size(30,30),
 parent=scene.car)
 
 scene.front_wheel = SpriteNode('images/wheel.png',
-#dynamic=False,
 position=(70,-33),
 pinned=True,
 friction=1.0,
 size=Size(30,30),
 parent=scene.car)
 
-#scene.camera.position = (w/2, 0)
 scene.camera.scale = 2
-#scene.camera.add_constraint(Constraint.position_y(Range.constant(0)))
-#scene.camera.add_constraint(Constraint.position_x(Range.constant(100)))
-#scene.camera.add_constraint(Constraint.distance_to_node(scene.car, Range.constant(100)))
+
+run(scene)

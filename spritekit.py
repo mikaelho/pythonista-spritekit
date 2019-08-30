@@ -6,16 +6,17 @@ from objc_util import ObjCInstanceMethodProxy
 from scene import Rect, Size
 import list_callback
 
-try:
-  import pygestures
-  from scripter import *
-except ModuleNotFoundError: pass
+import pygestures
+from scripter import *
+
+from util import *
 
 load_framework('SpriteKit')
 
 SK_classes = [
   'SKView', 'SKScene', 'SKNode',
   'SKShapeNode', 'SKSpriteNode',
+  'SKLabelNode',
   'SKPhysicsBody',
   'SKCameraNode', 'SKLightNode',
   'SKTexture',
@@ -27,179 +28,6 @@ SK_classes = [
 for class_name in SK_classes:
   globals()[class_name] = ObjCClass(class_name)
 
-
-def py_to_cg(value):
-  if type(value) == Size:
-    w, h = value
-    return CGSize(w, h)
-  elif len(value) == 4:
-    x, y, w, h = value
-    return CGRect(CGPoint(x, y), CGSize(w,h))
-  elif len(value) == 2:
-    x, y = value
-    return CGPoint(x, y)
-    
-def cg_to_py(value):
-  if type(value) == ObjCInstanceMethodProxy:
-    value = value()
-  if type(value) == CGPoint:
-    return ui.Point(value.x, value.y)
-  elif type(value) == CGVector:
-    return ui.Point(value.dx, value.dy)
-  elif type(value) == CGRect:
-    return Rect(
-      value.origin.x, value.origin.y,
-      value.size.width, value.size.height)
-  elif type(value) == CGSize:
-    return Size(value.width, value.height)
-
-def prop(func):
-  return property(func, func)
-  
-def method_or_not(value):
-  return value() if type(value) == ObjCInstanceMethodProxy else value
-  
-def node_relay(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  p = property(
-    lambda self:
-      method_or_not(getattr(self.node, attribute_name)),
-    lambda self, value:
-      setattr(self.node, attribute_name, value)
-  )
-  return p
-  
-'''
-def node_relay_prop(attribute_name):
-  p = property(
-    lambda self:
-      getattr(self.node, attribute_name)(),
-    lambda self, value:
-      setattr(self.node, attribute_name, value)
-  )
-  return p
-'''
-  
-def node_relay_set(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
-  p = property(
-    lambda self:
-      getattr(self.node, attribute_name)(),
-    lambda self, value:
-      getattr(self.node, set_name)(value)
-  )
-  return p
-  
-def convert_relay(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  p = property(
-    lambda self:
-      cg_to_py(getattr(self.node, attribute_name)),
-    lambda self, value:
-      setattr(self.node, attribute_name, py_to_cg(value))
-  )
-  return p
-  
-def convert_relay_readonly(attribute_name):
-  p = property(
-    lambda self:
-      cg_to_py(getattr(self.node, attribute_name))
-  )
-  return p
-  
-def str_relay(attribute_name):
-  p = property(
-    lambda self:
-      str(method_or_not(getattr(self.node, attribute_name))),
-    lambda self, value:
-      setattr(self.node, attribute_name, value)
-  )
-  return p
-  
-def no_op():
-  '''Property that does nothing, used by Scene to masquerade as a regular node. '''
-  p = property(
-    lambda self:
-      None,
-    lambda self, value:
-      None
-  )
-  return p
-  
-def color_prop(self, attribute, *value):
-  if value:
-    value = ui.parse_color(value[0])
-    setattr(self.node, attribute, UIColor.color(red=value[0], green=value[1], blue=value[2], alpha=value[3]))
-  else:
-    color = getattr(self.node, attribute)()
-    return (
-      color.red,
-      color.green,
-      color.blue,
-      color.alpha
-    )
-  
-def color_relay(attribute_name):
-  p = property(
-    lambda self:
-      color_prop(self, attribute_name),
-    lambda self, value:
-      color_prop(self, attribute_name, value)
-  )
-  return p
-  
-def physics_relay(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  p = property(
-    lambda self:
-      method_or_not(getattr(self.node.physicsBody(), attribute_name)),
-    lambda self, value:
-      setattr(self.node.physicsBody(), attribute_name, value)
-  )
-  return p
-  
-def physics_relay_set(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
-  p = property(
-    lambda self:
-      getattr(self.node.physicsBody(), attribute_name)(),
-    lambda self, value:
-      getattr(self.node.physicsBody(), 'set'+attribute_name[0].upper()+attribute_name[1:]+'_')(value)
-  )
-  return p
-  
-def boolean_relay(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  get_name = 'is'+attribute_name[0].upper()+attribute_name[1:]
-  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
-  p = property(
-    lambda self:
-      getattr(self.node, get_name)(),
-    lambda self, value:
-      getattr(self.node, set_name)(value)
-  )
-  return p
-  
-def physics_relay_readonly(attribute_name):
-  '''Property creator for pass-through physics properties'''
-  p = property(
-    lambda self:
-      getattr(self.node.physicsBody(), attribute_name)()
-  )
-  return p
-  
-def vector_physics_relay(attribute_name):
-  p = property(
-    lambda self:
-      cg_to_py(method_or_not(getattr(self.node.physicsBody(), attribute_name))),
-      #(getattr(self.node.physicsBody(), attribute_name)[0], 
-      #getattr(self.node.physicsBody(), attribute_name)[1]),
-    lambda self, value:
-      setattr(self.node.physicsBody(), attribute_name, CGVector(*value))
-  )
-  return p
 
 
 class Node:
@@ -268,6 +96,16 @@ class Node:
     return cg_to_py(
       self.node.convertPoint_fromNode_(
         py_to_cg(point), node.node))
+        
+  def convert_rect_to(self, rect, node):
+    x, y = self.convert_point_to((rect.x, rect.y), node)
+    x2, y2 = self.convert_point_to((rect.x+rect.w, rect.y+rect.h), node)
+    return Rect(x, y, x2-x, y2-y)
+    
+  def convert_rect_from(self, rect, node):
+    x, y = self.convert_point_from((rect.x, rect.y), node)
+    x2, y2 = self.convert_point_from((rect.x+rect.w, rect.y+rect.h), node)
+    return Rect(x, y, x2-x, y2-y)
       
   @prop
   def scale(self, *args):
@@ -531,7 +369,32 @@ class CameraNode(Node):
   
   def __init__(self, **kwargs):
     self.node = SKCameraNode.alloc().init()
+    self.corners = None
     super().__init__(**kwargs)
+    
+  def resize(self):
+    w,h = self.scene.size
+    for node in self.children:
+      if hasattr(node, 'camera_anchor'):
+        anchor = node.camera_anchor
+        x = anchor.anchor_point.x * w - w/2 + anchor.offset.x
+        y = anchor.anchor_point.y * h - h/2 + anchor.offset.y
+        node.position = (x, y)
+    '''
+    print('bounds', self.scene.bounds)
+    print('size', self.scene.size)
+    print('anchor', self.scene.anchor_point)
+    print('frame', self.scene.frame)
+    print('camera', self.position)
+    #c = self.convert_rect_from(b, self.scene)
+    
+    CircleNode(30,
+      fill_color=(random.random(), random.random(), random.random()),
+      no_body=True,
+      position=(w/2,h/2),
+      parent=self)
+    '''
+
     
   def visible(self, node):
     return self.node.containsNode_(node.node)
@@ -542,6 +405,14 @@ class CameraNode(Node):
       visible.add(sk_node.py_node)
     return visible
 
+
+class Anchor:
+  
+  def __init__(self, anchor_point, offset):
+    self.anchor_point = ui.Point(*anchor_point)
+    self.offset = ui.Point(*offset)
+    
+
 class CircleNode(PathNode):
   
   def __init__(self, radius=50, **kwargs):
@@ -549,7 +420,8 @@ class CircleNode(PathNode):
     #r = self._radius = radius
     
     self.node = SKShapeNode.shapeNodeWithCircleOfRadius_(radius)
-    self.body = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
+    if not kwargs.pop('no_body', False):
+      self.body = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
     
     super().__init__(None, **kwargs)
       
@@ -599,6 +471,39 @@ class SpriteNode(Node):
   @property
   def texture(self):
     return Texture(self.node.texture())
+
+
+class LabelNode(Node):
+  
+  def __init__(self, text, **kwargs):
+    assert type(text) == str
+    self.node = SKLabelNode.labelNodeWithText_(text)      
+    super().__init__(**kwargs)
+    
+  ALIGN_CENTER = 0
+  ALIGN_LEFT = 1
+  ALIGN_RIGHT = 2
+    
+  ALIGN_BASELINE = 0
+  ALIGN_MIDDLE = 1
+  ALIGN_TOP = 2
+  ALIGN_BOTTOM = 3
+    
+  text = node_relay_set('text')
+  font_color = color_relay('fontColor')
+  font_name = node_relay_set('fontName')
+  font_size = node_relay_set('fontSize')
+  alignment = node_relay_set('horizontalAlignmentMode')
+  vertical_alignment = node_relay_set('verticalAlignmentMode')
+  
+  @prop
+  def font(self, *args):
+    if args:
+      value = args[0]
+      self.font_name = value[0]
+      self.font_size = value[1]
+    else:
+      return (self.font_name, self.font_size)
 
 class FieldNode(Node):
   
@@ -909,6 +814,7 @@ def touchesEnded_withEvent_(_self, _cmd, _touches, event):
   handle_touch(_self, _cmd, _touches, event, 'touch_ended')
 
 def update_(_self, _cmd, current_time): 
+  '''Complicated checks to avoid problems due to scene getting restarted upon resume.'''
   if not 'ObjCInstance' in globals():
     return
   scene = ObjCInstance(_self)
@@ -920,14 +826,17 @@ def update_(_self, _cmd, current_time):
     node.update(current_time)
 
 def didChangeSize_(_self,_cmd, _oldSize):
-  scene = ObjCInstance(_self)
-  if hasattr(scene, 'py_node'):
-    if scene.py_node.edges:
-      v = scene.py_node.view
-      scene.py_node.set_edge_loop(
+  objc_scene = ObjCInstance(_self)
+  if hasattr(objc_scene, 'py_node'):
+    scene = objc_scene.py_node
+    if scene.edges:
+      v = scene.view
+      scene.set_edge_loop(
         0, 0, v.width, v.height)
-    if hasattr(scene.py_node, 'layout'):
-      scene.py_node.layout()
+    if hasattr(scene, 'layout'):
+      scene.layout()
+    if scene.camera is not None:
+      scene.camera.resize()
 
 def didBeginContact_(_self, _cmd, _contact):
   scene = ObjCInstance(_self)
@@ -972,8 +881,10 @@ touchesEnded_withEvent_,
 
 class Scene(Node):
   
+  @on_main_thread
   def __init__(self, physics=None, touchable=False, physics_debug=False, **kwargs):
     kwargs['physics_debug'] = physics_debug
+    self.corners = None
     self.view = view = TouchableSpriteView(**kwargs) if touchable else SpriteView(**kwargs)
     rect = CGRect(CGPoint(0, 0), CGSize(view.width, view.height))
     self.scene = self
@@ -994,11 +905,8 @@ class Scene(Node):
     #  self.camera = CameraNode(parent=self)
     view.skview.presentScene_(scene)
     
-  def run(self):
-    self.view.present()
-    
   def setup(self):
-    pass
+    pass   
     
   def convert_to_view(self, point):
     return cg_to_py(self.node.convertPointToView_(
@@ -1144,6 +1052,7 @@ class TouchScene(Scene):
   
 class SpriteView(Scripter):
 
+  @on_main_thread
   def __init__(self, physics_debug, **kwargs):
     super().__init__(**kwargs)
     rect = CGRect(CGPoint(0, 0),CGSize(self.width, self.height))
@@ -1156,16 +1065,18 @@ class SpriteView(Scripter):
     self.skview = skview
     self.multitouch_enabled = True
     self.skview.setMultipleTouchEnabled_(True)
-  
+
   def will_close(self):
+    delattr(self.scene.node, 'py_node')
     self.scene.node.removeAllChildren()
     # Must pause to stop update_
     self.scene.node.paused = True
     self.scene.node.removeFromParent()
     self.skview.removeFromSuperview()
+    #self.scene.node.release()
     self.skview.release()
     self.skview = None
-    self.scene.node = None
+    #self.scene.node = None
 
 
 class TouchView(
@@ -1234,13 +1145,10 @@ class BilliardsPhysics(BasePhysics):
   restitution = 0.6
 
 @on_main_thread
-def run(scene, 
-  orientation=None, 
-  frame_interval=1,
-  antialias=False,
-  show_fps=False,
-  multi_touch=True):
-  scene.view.present()
+def run(scene, **kwargs):
+  scene.view.present(**kwargs)
+  #if hasattr(scene, 'setup'):
+  #  scene.setup()
   
 class Texture:
   
