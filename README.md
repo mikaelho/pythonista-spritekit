@@ -11,6 +11,7 @@ If you are familiar with Pythonista scene module, many things will feel familiar
 * BoxNode
 * CircleNode
 * SpriteNode
+* LabelNode
 * CameraNode
 * FieldNode
 
@@ -100,6 +101,18 @@ FieldNodes have the following attributes:
 * falloff
 * strength
 * region - see Region in supporting classes
+
+### LabelNode(text)
+
+Attributes:
+
+* text
+* font = (font_name, font_size)
+* font_color
+* font_name
+* font_size
+* alignment - LabelNode.ALIGN_CENTER/ALIGN_LEFT/ALIGN_RIGHT
+* vertical_alignment - LabelNode.ALIGN_BASELINE/ALIGN_MIDDLE/ALIGN_TOP/ALIGN_BOTTOM
 
 ### CameraNode
 
