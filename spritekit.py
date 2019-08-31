@@ -206,11 +206,14 @@ class ShapeNode(Node):
     ) if hull else None
     return ShapeNode(path, hull_path, **kwargs)
     
+    
   @classmethod
   def path_from_points(cls, points, smooth=False, start_with_move=True):
     assert len(points) > 1
     if smooth:
-      return ShapeNode.quadcurve(points)
+      #return ShapeNode.quadcurve(points)
+      
+      return ShapeNode.smooth(points)
     else:
       path = ui.Path()
       if start_with_move:
@@ -222,6 +225,27 @@ class ShapeNode(Node):
       if not start_with_move:
         path.line_to(*points[0])
       return path
+    
+  @classmethod
+  def smooth(cls, points):
+    cg_points = [ py_to_cg(point) for point in points ]
+    cg_points_array = (CGPoint * len(cg_points))(*cg_points)
+    node = SKShapeNode.shapeNodeWithSplinePoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
+    descr = str(ObjCInstance(node.path()))
+    path = ui.Path()
+    for line in descr.splitlines():
+      parts = line.split()
+      if len(parts) > 2:
+        if parts[0] == 'moveto':
+          path.move_to(*eval(
+            parts[1]+parts[2]))
+        elif parts[0] == 'curveto':
+          path.add_curve(
+            *eval(parts[5]+parts[6]),
+            *eval(parts[1]+parts[2]),
+            *eval(parts[3]+parts[4]),
+          )
+    return path
     
   @classmethod
   def hull(cls, points):
@@ -251,16 +275,107 @@ class ShapeNode(Node):
     return l.extend(u[i] for i in range(1, len(u) - 1)) or l
     
   @classmethod
+  def simple(cls, points, path=None):
+    if len(points) < 2: return
+    path = path or ui.Path()
+    start = Point(*points[0])
+    path.line_to(*start)
+    for end in points[1:]:
+      end = Point(*end)
+      if abs(start.x-end.x) > abs(start.y-end.y):
+        cp1 = Point((start.x+end.x)/2, start.y)
+        cp2 = (cp1.x, end.y)
+      else:
+        cp1 = Point(start.x, (start.y+end.y)/2)
+        cp2 = Point(end.x, cp1.y)
+      path.add_curve(*end, *cp1, *cp2)
+      start = end
+    return path
+      
+  @classmethod
+  def smoothed(cls, points, path=None):
+    assert len(points) > 1
+    points = [Point(*p) for p in points]
+    path = path or ui.Path()
+    start = Point(*points[0])
+    path.line_to(*start)
+    
+    rhs_array = []
+    a = []
+    b = []
+    c = []
+    
+    for i in range(len(points)-1):
+      p0 = points[i]
+      p3 = points[i+1]
+      
+      if i == 0:
+        a.append(0)
+        b.append(2)
+        c.append(1)
+        rhs_value = p0 + 2 * p3
+      elif i == len(points)-1:
+        a.append(2)
+        b.append(7)
+        c.append(0)
+        rhs_value = 8*p0+p3
+      else:
+        a.append(1)
+        b.append(4)
+        c.append(1)
+        rhs_value = 4*p0 + 2*p3
+      rhs_array.append(rhs_value)
+        
+    for i in range(1, len(points)-1):
+      rhs_value = rhs_array[i]
+      prev_value = rhs_array[i-1]
+      m = a[i]/b[i-1]
+      b1 = b[i] - m * c[i-1]
+      #b1 = b[i] — m * c[i-1]
+      b[i] = b1
+      rhs_array[i] = rhs_value - m * prev_value
+    
+    first_cps = [None]*len(points)
+    first_cps[-1] = rhs_array[-1]/b[-1]
+    
+    for i in range(len(points)-2, -1, -1):
+      first_cps[i] = rhs_array[i] - c[i] * first_cps[i+1]/b[i]
+      
+    second_cps = []
+      
+    for i in range(len(points)-1):
+      if i == len(points)-2:
+        p3 = points[i+1]
+        p1 = first_cps[i]
+        second_cps.append((p3+p1)/2)
+      else:
+        p3 = points[i+1]
+        next_p1 = first_cps[i+1]
+        second_cps.append(2*p3-next_p1)
+        
+    for i in range(1, len(points)-1):
+      path.add_curve(*points[i], *first_cps[i], *second_cps[i])
+      
+    return path
+    
+  @classmethod
   def quadcurve(cls, points, path=None):
   
     def control_point(p1, p2):
-      return (p1+p2)/2
+      #return (p1+p2)/2
       control = (p1+p2)/2
+      diff_x = abs(p2.x - control.x)
       diff_y = abs(p2.y - control.y)
-      if p1.y < p2.y:
-        control.y += diff_y
-      elif p1.y > p2.y:
-        control.y -= diff_y
+      if diff_x > diff_y:
+        if p1.x < p2.x:
+          control.x += diff_x
+        elif p1.x > p2.x:
+          control.x -= diff_x
+      else:
+        if p1.y < p2.y:
+          control.y += diff_y
+        elif p1.y > p2.y:
+          control.y -= diff_y
       return control
   
     if len(points) < 2: return
