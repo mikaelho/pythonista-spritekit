@@ -1,4 +1,4 @@
-import random, importlib, math
+import random, importlib, math, functools
 
 import ui
 from objc_util import *
@@ -143,49 +143,143 @@ class Node:
   def apply_torque(self, torque):
     self.body.applyTorque_(torque)
   
-  affected_by_gravity = physics_relay_set('affectedByGravity')   
-  allows_rotation = physics_relay_set('allowsRotation')
+  affected_by_gravity = physics_relay('affectedByGravity')   
+  allows_rotation = physics_relay('allowsRotation')
   alpha = node_relay('alpha')
-  anchor_point = convert_relay('anchorPoint')
+  anchor_point = node_convert('_anchorPoint')
   area = physics_relay_readonly('area')
-  angular_damping = physics_relay_set('angularDamping')
-  angular_velocity = physics_relay_set('angularVelocity')
-  background_color = fill_color = color_relay('fillColor')
-  bbox = convert_relay_readonly('calculateAccumulatedFrame') 
-  bullet_physics = physics_relay_set('usesPreciseCollisionDetection')
-  category_bitmask = physics_relay_set('categoryBitMask')
-  contact_bitmask = physics_relay_set('contactTestBitMask')
-  collision_bitmask = physics_relay_set('collisionBitMask')
-  
-  density = physics_relay_set('density')
-  
-  @prop
-  def dynamic(self, *args):
-    if args:
-      value = args[0]
-      self.body.setDynamic_(value)
-    else:
-      return self.body.isDynamic()
-  
-  frame = convert_relay('frame')
-  friction = physics_relay_set('friction')
-  hidden = boolean_relay('hidden')
-  linear_damping = physics_relay_set('linearDamping')
-  mass = physics_relay_set('mass')
+  angular_damping = physics_relay('angularDamping')
+  angular_velocity = physics_relay('angularVelocity')
+  background_color = fill_color = node_color('fillColor')
+  bbox = node_convert('calculateAccumulatedFrame') 
+  bullet_physics = physics_relay('usesPreciseCollisionDetection')
+  category_bitmask = physics_relay('categoryBitMask')
+  contact_bitmask = physics_relay('contactTestBitMask')
+  collision_bitmask = physics_relay('collisionBitMask')
+  density = physics_relay('density')
+  dynamic = physics_relay('dynamic')
+  frame = node_convert('frame')
+  friction = physics_relay('friction')
+  hidden = node_relay('hidden')
+  linear_damping = physics_relay('linearDamping')
+  mass = physics_relay('mass')
   name = str_relay('name')
   body = node_relay('physicsBody')
   pinned = physics_relay('pinned')
-  position = convert_relay('position')
+  position = node_convert('position')
   resting = physics_relay_readonly('isResting')
-  restitution = physics_relay_set('restitution')
+  restitution = physics_relay('restitution')
   rotation = node_relay('zRotation')
   scale_x = node_relay('xScale')
   scale_y = node_relay('yScale')
-  size = convert_relay('size')
+  size = node_convert('size')
   touch_enabled = node_relay('userInteractionEnabled')
-  velocity = vector_physics_relay('velocity')
+  velocity = physics_vector('velocity')
   z_position = node_relay('zPosition')
 
+  def needs_body(self, kwargs):
+    return not kwargs.pop('no_body', False)
+
+class ShapeNode(Node):
+  
+  def __init__(self, path=None, hull=None, **kwargs):
+    if hull:
+      self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
+      if self.needs_body(kwargs):
+        cgpath = hull.objc_instance.CGPath()
+        physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
+        self.node.setPhysicsBody_(physics)
+    else:
+      self.node = TouchShapeNode.shapeNodeWithPath_centered_(path.objc_instance.CGPath(), True)
+      if self.needs_body(kwargs):
+        texture = SKView.alloc().init().textureFromNode_(self.node)
+        physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+        self.node.setPhysicsBody_(physics)
+    super().__init__(**kwargs)
+    
+  @classmethod
+  def points(cls, points, smooth=False, hull=True, **kwargs):
+    path = ShapeNode.path_from_points(points, smooth)
+    hull_path = ShapeNode.path_from_points(
+      ShapeNode.hull(points), 
+      start_with_move=False
+    ) if hull else None
+    return ShapeNode(path, hull_path, **kwargs)
+    
+  @classmethod
+  def path_from_points(cls, points, smooth=False, start_with_move=True):
+    assert len(points) > 1
+    if smooth:
+      return ShapeNode.quadcurve(points)
+    else:
+      path = ui.Path()
+      if start_with_move:
+        path.move_to(*points[0])
+      else:
+        path.line_to(*points[0])
+      for point in points:
+        path.line_to(*point)
+      if not start_with_move:
+        path.line_to(*points[0])
+      return path
+    
+  @classmethod
+  def hull(cls, points):
+    '''
+    Returns points on convex hull in CCW order according to Graham's scan algorithm. 
+    By Tom Switzer <thomas.switzer@gmail.com>.
+    '''
+    TURN_LEFT, TURN_RIGHT, TURN_NONE = (1, -1, 0)
+
+    def cmp(a, b):
+      return (a > b) - (a < b)
+
+    def turn(p, q, r):
+      return cmp((q[0] - p[0])*(r[1] - p[1]) - (r[0] - p[0])*(q[1] - p[1]), 0)
+
+    def _keep_left(hull, r):
+      while len(hull) > 1 and turn(hull[-2], hull[-1], r) == TURN_RIGHT:
+      #while len(hull) > 1 and turn(hull[-2], hull[-1], r) != TURN_LEFT:
+        hull.pop()
+      if not len(hull) or hull[-1] != r:
+        hull.append(r)
+      return hull
+
+    points = sorted(points)
+    l = functools.reduce(_keep_left, points, [])
+    u = functools.reduce(_keep_left, reversed(points), [])
+    return l.extend(u[i] for i in range(1, len(u) - 1)) or l
+    
+  @classmethod
+  def quadcurve(cls, points, path=None):
+  
+    def control_point(p1, p2):
+      return (p1+p2)/2
+      control = (p1+p2)/2
+      diff_y = abs(p2.y - control.y)
+      if p1.y < p2.y:
+        control.y += diff_y
+      elif p1.y > p2.y:
+        control.y -= diff_y
+      return control
+  
+    if len(points) < 2: return
+    path = path or ui.Path()
+    points = [ui.Point(*p) for p in points]
+    p1 = points[0]
+    #path.move_to(*p1)
+    if len(points) == 2:
+      path.line_to(*points[1])
+      return path
+    for i in range(len(points)):
+      mid = (p1+points[i])/2
+      path.add_quad_curve(
+        *mid, *control_point(mid, p1))
+      path.add_quad_curve(
+        *points[i], *control_point(mid, points[i]))
+      p1 = points[i]
+    return path
+    
 
 class PathNode(Node):
   
@@ -281,28 +375,9 @@ class PathNode(Node):
         *points[i], *control_point(mid, points[i]))
       p1 = points[i]
     return path
-  
-  @classmethod    
-  def bezier(cls, points, p=None, start=None, end=None):
-    '''Based on the given points, adds a cubic Bézier curve to the given path,
-    or returns a new path is none is given.
-    start and end are vectors that give the starting and ending slopes;
-    next/prevopus points are used if these are not given.'''
-    assert len(points) > 1
-    p = p or ui.Path()
-    if start is None:
-      start = points[1]-points[0]
-    if end is None:
-      end = points[-2]-points[-1]
+
     
-      
-  @prop
-  def antialiased(self, *args):
-    if args:
-      value = args[0]
-      self.physics_body.setAntialiased_(value)
-    else:
-      return self.physics_body.isAntialised()
+  antialiased = node_relay('antialiased')
       
   @prop
   def fill_texture(self, *args):
@@ -318,7 +393,7 @@ class PathNode(Node):
       return value
       
   glow_width = node_relay('glowWidth')
-  line_color = color_relay('strokeColor')
+  line_color = node_color('strokeColor')
   line_width = node_relay('lineWidth')
   line_length = node_relay('lineLength')
 
@@ -336,13 +411,71 @@ class PointsNode(Node):
     else:
       self.node = SKShapeNode.shapeNodeWithPoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
 
+    self.anchor_point = (0,0)
+
     texture = SKView.alloc().init().textureFromNode_(self.node)
     self.node = TouchSpriteNode.spriteNodeWithTexture_(texture)
     physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
     self.node.setPhysicsBody_(physics)
     
+    print(self.anchor_point)
+    
     super().__init__(**kwargs)
     
+    
+class ConvexNode(PathNode):
+  
+  def __init__(self, points, smooth=False, **kwargs):
+    cg_points = [ py_to_cg(point) for point in points ]
+
+    cg_points_array = (CGPoint * len(cg_points))(*cg_points)
+    
+    if smooth:
+      self.node = SKShapeNode.shapeNodeWithSplinePoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
+
+    else:
+      self.node = SKShapeNode.shapeNodeWithPoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
+    
+    if not kwargs.pop('no_body', False):
+      hull = ConvexNode.hull(points)
+      path = ui.Path()
+      for p in hull:
+        path.line_to(*p)
+      path.line_to(*hull[0])
+      cgpath = path.objc_instance.CGPath()
+        
+      physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
+      self.node.setPhysicsBody_(physics)
+    
+    super().__init__(**kwargs)
+
+  @classmethod
+  def hull(cls, points):
+    '''
+    Returns points on convex hull in CCW order according to Graham's scan algorithm. 
+    By Tom Switzer <thomas.switzer@gmail.com>.
+    '''
+    TURN_LEFT, TURN_RIGHT, TURN_NONE = (1, -1, 0)
+
+    def cmp(a, b):
+      return (a > b) - (a < b)
+
+    def turn(p, q, r):
+      return cmp((q[0] - p[0])*(r[1] - p[1]) - (r[0] - p[0])*(q[1] - p[1]), 0)
+
+    def _keep_left(hull, r):
+      while len(hull) > 1 and turn(hull[-2], hull[-1], r) == TURN_RIGHT:
+      #while len(hull) > 1 and turn(hull[-2], hull[-1], r) != TURN_LEFT:
+        hull.pop()
+      if not len(hull) or hull[-1] != r:
+        hull.append(r)
+      return hull
+
+    points = sorted(points)
+    l = functools.reduce(_keep_left, points, [])
+    u = functools.reduce(_keep_left, reversed(points), [])
+    return l.extend(u[i] for i in range(1, len(u) - 1)) or l
+
 
 class BoxNode(PathNode):
   
@@ -488,12 +621,12 @@ class LabelNode(Node):
   ALIGN_TOP = 2
   ALIGN_BOTTOM = 3
     
-  text = node_relay_set('text')
-  font_color = color_relay('fontColor')
-  font_name = node_relay_set('fontName')
-  font_size = node_relay_set('fontSize')
-  alignment = node_relay_set('horizontalAlignmentMode')
-  vertical_alignment = node_relay_set('verticalAlignmentMode')
+  text = node_relay('text')
+  font_color = node_color('fontColor')
+  font_name = node_relay('fontName')
+  font_size = node_relay('fontSize')
+  alignment = node_relay('horizontalAlignmentMode')
+  vertical_alignment = node_relay('verticalAlignmentMode')
   
   @prop
   def font(self, *args):
@@ -566,8 +699,8 @@ class FieldNode(Node):
   def vortex(cls):
     return FieldNode(SKFieldNode.vortexField())
     
-  enabled = boolean_relay('enabled')
-  exclusive = boolean_relay('exclusive')
+  enabled = node_relay('enabled')
+  exclusive = node_relay('exclusive')
   falloff = node_relay('falloff')
   strength = node_relay('strength')
   
@@ -967,7 +1100,7 @@ class Scene(Node):
       return self.node.physicsWorld().gravity()
     
   contact_bitmask = no_op()
-  background_color = color_relay('backgroundColor')
+  background_color = node_color('backgroundColor')
   
 class TouchScene(Scene):
   
@@ -1300,17 +1433,8 @@ if __name__ == '__main__':
     
   def create_polygon_shape(position):
     points = get_points()
-    '''
-    p = ui.Path()
-    for i, point in enumerate(points):
-      if i == 0:
-        p.move_to(*point)
-      else:
-        p.line_to(*point)
-    '''
-    p = PathNode.quadcurve(points)
-    #p.close()
-    return PathNode(path=p, position=position)
+    return ShapeNode.points(points, 
+    hull=False, smooth=True, position=position)
   
   def create_circle_shape(point):
     radius = random.randint(25, 45)

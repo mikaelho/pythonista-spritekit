@@ -28,19 +28,32 @@ def cg_to_py(value):
   elif type(value) == CGSize:
     return Size(value.width, value.height)
 
-def prop(func):
-  return property(func, func)
-  
 def method_or_not(value):
   return value() if type(value) == ObjCInstanceMethodProxy else value
   
+def getter(source, attribute_name):
+  is_name = 'is'+attribute_name[0].upper()+attribute_name[1:]
+  if is_name in dir(source):
+    attribute_name = is_name
+  return method_or_not(getattr(source, attribute_name))
+  
+def setter(target, attribute_name, value):
+  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
+  if set_name in dir(target):
+    getattr(target, set_name)(value)
+  else:
+    setattr(target, attribute_name, value)
+
+def prop(func):
+  return property(func, func)
+
 def node_relay(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      method_or_not(getattr(self.node, attribute_name)),
+      getter(self.node, attribute_name),
     lambda self, value:
-      setattr(self.node, attribute_name, value)
+      setter(self.node, attribute_name, value)
   )
   return p
   
@@ -66,20 +79,20 @@ def node_relay_set(attribute_name):
   )
   return p
   
-def convert_relay(attribute_name):
+def node_convert(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      cg_to_py(getattr(self.node, attribute_name)),
+      cg_to_py(getter(self.node, attribute_name)),
     lambda self, value:
-      setattr(self.node, attribute_name, py_to_cg(value))
+      setter(self.node, attribute_name, py_to_cg(value))
   )
   return p
   
-def convert_relay_readonly(attribute_name):
+def node_convert_readonly(attribute_name):
   p = property(
     lambda self:
-      cg_to_py(getattr(self.node, attribute_name))
+      cg_to_py(getter(self.node, attribute_name))
   )
   return p
   
@@ -105,9 +118,9 @@ def no_op():
 def color_prop(self, attribute, *value):
   if value:
     value = ui.parse_color(value[0])
-    setattr(self.node, attribute, UIColor.color(red=value[0], green=value[1], blue=value[2], alpha=value[3]))
+    setter(self.node, attribute, UIColor.color(red=value[0], green=value[1], blue=value[2], alpha=value[3]))
   else:
-    color = getattr(self.node, attribute)()
+    color = getter(self.node, attribute)
     return (
       color.red,
       color.green,
@@ -115,7 +128,7 @@ def color_prop(self, attribute, *value):
       color.alpha
     )
   
-def color_relay(attribute_name):
+def node_color(attribute_name):
   p = property(
     lambda self:
       color_prop(self, attribute_name),
@@ -128,9 +141,9 @@ def physics_relay(attribute_name):
   '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
-      method_or_not(getattr(self.node.physicsBody(), attribute_name)),
+      method_or_not(getter(self.node.physicsBody(), attribute_name)),
     lambda self, value:
-      setattr(self.node.physicsBody(), attribute_name, value)
+      setter(self.node.physicsBody(), attribute_name, value)
   )
   return p
   
@@ -165,13 +178,13 @@ def physics_relay_readonly(attribute_name):
   )
   return p
   
-def vector_physics_relay(attribute_name):
+def physics_vector(attribute_name):
   p = property(
     lambda self:
-      cg_to_py(method_or_not(getattr(self.node.physicsBody(), attribute_name))),
+      cg_to_py(getter(self.node.physicsBody(), attribute_name)),
       #(getattr(self.node.physicsBody(), attribute_name)[0], 
       #getattr(self.node.physicsBody(), attribute_name)[1]),
     lambda self, value:
-      setattr(self.node.physicsBody(), attribute_name, CGVector(*value))
+      setter(self.node.physicsBody(), attribute_name, CGVector(*value))
   )
   return p
