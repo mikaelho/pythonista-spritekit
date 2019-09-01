@@ -182,13 +182,23 @@ class Node:
 
 class ShapeNode(Node):
   
-  def __init__(self, path=None, smooth=False, hull=None, **kwargs):
+  def __init__(self, path_or_points, smooth=False, hull=True, **kwargs):
+    path_given = type(path_or_points) == ui.Path
     if smooth:
-      path = ShapeNode.smooth(path)
+      path = ShapeNode.smooth(path_or_points)
+    elif not path_given:
+      path = ShapeNode.path_from_points(path_or_points)
+    else:
+      path = path_or_points
     if hull:
       self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
+      points = ShapeNode.points_from_path(path_or_points) if path_given else path_or_points
+      hull_path = ShapeNode.path_from_points(
+        ShapeNode.hull(points), 
+        start_with_move=False
+      )
       if self.needs_body(kwargs):
-        cgpath = hull.objc_instance.CGPath()
+        cgpath = hull_path.objc_instance.CGPath()
         physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
         self.node.setPhysicsBody_(physics)
     else:
@@ -232,8 +242,8 @@ class ShapeNode(Node):
       return path
     
   @classmethod
-  def smooth(cls, points_or_path):
-    points = ShapeNode.points_from_path(points_or_path) if type(points_or_path) == ui.Path else points_or_path
+  def smooth(cls, path_or_points):
+    points = ShapeNode.points_from_path(path_or_points) if type(path_or_points) == ui.Path else path_or_points
     cg_points = [ py_to_cg(point) for point in points ]
     cg_points_array = (CGPoint * len(cg_points))(*cg_points)
     node = SKShapeNode.shapeNodeWithSplinePoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])

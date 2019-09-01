@@ -27,7 +27,7 @@ class DrawView(ui.View):
     
   def touch_ended(self, t):
     self.every_other = self.every_other == False
-    ShapeNode.points(self.relative_points,
+    ShapeNode(self.relative_points,
       hull=self.every_other,
       line_color=(random(),random(),random()),
       line_width=3,
