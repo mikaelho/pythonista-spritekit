@@ -22,9 +22,9 @@ SK_classes = [
   'SKTexture',
   'SKFieldNode', 'SKRegion',
   'SKConstraint', 'SKRange',
-  'SKTextureAtlas'
+  'SKTextureAtlas',
 ]
-
+# 'CGMutablePath'
 for class_name in SK_classes:
   globals()[class_name] = ObjCClass(class_name)
 
@@ -196,6 +196,9 @@ class ShapeNode(Node):
         physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
         self.node.setPhysicsBody_(physics)
     super().__init__(**kwargs)
+    if not hull:
+      x,y,w,h = path.bounds
+      self.position += (w/2+x,h/2+y)
     
   @classmethod
   def points(cls, points, smooth=False, hull=True, **kwargs):
@@ -395,6 +398,26 @@ class ShapeNode(Node):
       p1 = points[i]
     return path
     
+  antialiased = node_relay('antialiased')
+      
+  @prop
+  def fill_texture(self, *args):
+    if args:
+      value = args[0]
+      if value is not None:
+        value = value.texture
+      self.node.fillTexture = value
+    else:
+      value = self.node.fillTexture
+      if value is not None:
+        value = Texture(value)
+      return value
+      
+  glow_width = node_relay('glowWidth')
+  line_color = node_color('strokeColor')
+  line_width = node_relay('lineWidth')
+  line_length = node_relay('lineLength')
+  
 
 class PathNode(Node):
   
@@ -416,48 +439,7 @@ class PathNode(Node):
       else:
         self.node.path = cgpath
       if self.no_body:
-        return 
-      '''
-      x,y,w,h = self.frame
-      with ui.ImageContext(w,h, scale=1) as ctx:
-        with ui.GState():
-          ui.concat_ctm(ui.Transform.translation(0,h)) # Position for flip
-          ui.concat_ctm(ui.Transform.scale(1,-1)) # Flip vertical
-          ui.concat_ctm(ui.Transform.translation(-x,-y)) # Correct origin
-
-          ui.set_color('white')
-          path.stroke()
-          img = ctx.get_image()
-          
-      atlas = SKTextureAtlas.atlasWithDictionary_(
-        {'default': img.objc_instance})
-      '''
-      #img.show()
-      #return 
-      '''
-      physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
-      if physics is None:
-        reverse_path = path.objc_instance.bezierPathByReversingPath().CGPath()
-        physics = SKPhysicsBody.bodyWithPolygonFromPath_(reverse_path)
-      '''
-      #if physics is None:
-        #texture = view.skview.textureFromNode_(self.node)
-
-      #py_texture = Texture(img)
-      #texture = py_texture.texture
-      
-      #texture = SKView.alloc().init().textureFromNode_(self.node)
-      
-      #texture = atlas.textureNamed_('default')
-      #physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
-      
-      '''
-      if physics is None:
-        raise RuntimeError(f'Could not create physics body for path {path}.')
-      '''
-      
-      #reverse_path = path.objc_instance.bezierPathByReversingPath().CGPath()
-      self.node.setPhysicsBody_(SKPhysicsBody.bodyWithEdgeChainFromPath_(cgpath))
+        return self.node.setPhysicsBody_(SKPhysicsBody.bodyWithEdgeChainFromPath_(cgpath))
     else:
       return self._path
   

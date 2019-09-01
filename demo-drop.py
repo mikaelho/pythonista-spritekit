@@ -6,34 +6,39 @@ class DropScene(Scene):
   def __init__(self, **kwargs):
     super().__init__(**kwargs)
     self.anchor_point = (0.5, 0)
-    BoxNode((250,20),
+    BoxNode((275,20),
       fill_color='black',
       position=(0, 50),
       dynamic=False,
       parent=self
     )
+    self.box((-50,150))
+    self.box((50,200))
     
   def touch_ended(self, touch):
     node_func = choice([
-      lambda **kw: CircleNode(
-        randint(25, 45), **kw),
-      lambda **kw: BoxNode(
-        (randint(42, 80),randint(42, 80)),
-        **kw)
+      self.box,
+      self.ball,
     ])
-    node = node_func(
+    node_func(touch.location)
+    
+  def box(self, position):
+    BoxNode(
+      (randint(42, 80),randint(42, 80)),
       fill_color = (random(), random(), random()),
-      position = touch.location,
-      parent=self
-    )
+      position=position,
+      parent=self)
+    
+  def ball(self, position):
+    CircleNode(
+      randint(25, 45),
+      fill_color = (random(), random(), random()),
+      position=position,
+      parent=self)
     
   def update(self, ct):
     for node in self.children:
       if node.position.y < 0:
         node.parent = None
-    if len(self.children) == 0:
-      LabelNode(text='Vicrory!',
-        position=(0, 100),
-        parent=self)
     
 run(DropScene())

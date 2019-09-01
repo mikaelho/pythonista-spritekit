@@ -27,7 +27,7 @@ class ScrollingScene(Scene):
   
     self.score = LabelNode('Score', 
       anchor_point=(1,1),
-      camera_anchor=Anchor((1,0.7), (-20,-20)),
+      camera_anchor=Anchor((1,1), (-20,-20)),
       alignment = LabelNode.ALIGN_RIGHT,
       vertical_alignment = LabelNode.ALIGN_TOP,
       parent=self.camera)
