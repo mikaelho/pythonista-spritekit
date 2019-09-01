@@ -182,7 +182,9 @@ class Node:
 
 class ShapeNode(Node):
   
-  def __init__(self, path=None, hull=None, **kwargs):
+  def __init__(self, path=None, smooth=False, hull=None, **kwargs):
+    if smooth:
+      path = ShapeNode.smooth(path)
     if hull:
       self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
       if self.needs_body(kwargs):
@@ -230,7 +232,8 @@ class ShapeNode(Node):
       return path
     
   @classmethod
-  def smooth(cls, points):
+  def smooth(cls, points_or_path):
+    points = ShapeNode.points_from_path(points_or_path) if type(points_or_path) == ui.Path else points_or_path
     cg_points = [ py_to_cg(point) for point in points ]
     cg_points_array = (CGPoint * len(cg_points))(*cg_points)
     node = SKShapeNode.shapeNodeWithSplinePoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
@@ -249,6 +252,28 @@ class ShapeNode(Node):
             *eval(parts[3]+parts[4]),
           )
     return path
+    
+  @classmethod
+  def points_from_path(cls, path):
+    cgpath = ObjCInstance(path.objc_instance.CGPath())
+    descr = str(cgpath)
+    points = []
+    prev_moveto = None
+    for line in descr.splitlines():
+      parts = line.split()
+      if len(parts) > 2:
+        oper = parts[0]
+        if oper == 'moveto':
+          prev_moveto = eval(
+            parts[1]+parts[2])
+        elif prev_moveto is not None:
+          points.append(Point(*prev_moveto))
+          prev_moveto = None
+        if oper == 'lineto':
+          points.append(Point(*eval(parts[1]+parts[2])))
+        elif oper == 'curveto':
+          points.append(Point(*eval(parts[5]+parts[6])))
+    return points
     
   @classmethod
   def hull(cls, points):
@@ -1528,10 +1553,11 @@ if __name__ == '__main__':
     points.append(points[0])
     return points
     
-  def create_polygon_shape(position):
+  def create_polygon_shape(position, smooth=False):
     points = get_points()
-    return ShapeNode.points(points, 
-    hull=False, smooth=True, position=position)
+    path = ShapeNode.path_from_points(points)
+    return ShapeNode(path, smooth=smooth, 
+    hull=False, position=position)
   
   def create_circle_shape(point):
     radius = random.randint(25, 45)
@@ -1574,6 +1600,16 @@ if __name__ == '__main__':
   wierd = create_polygon_shape(position=(200, 300))
   wierd.fill_color = 'grey'
   wierd.parent = scene
+  
+  points = get_points()
+  path = ShapeNode.path_from_points(points)
+  
+  ShapeNode(path, position=(100,800),
+  fill_color='grey', parent=scene)
+    
+  ShapeNode(path, position=(250,800),
+  smooth=True,
+  fill_color='grey', parent=scene)
     
   scene.camera = CameraNode(parent=scene)
   scene.camera.add_constraint(
