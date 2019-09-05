@@ -179,7 +179,7 @@ for angle, color in balls:
 
 p = ui.Path()
 p.line_to(10,10)
-scene.power_indicator = PathNode(p,
+scene.power_indicator = ShapeNode(p,
   hidden=True,
   no_body=True,
   line_color=(1,1,1,0.3),

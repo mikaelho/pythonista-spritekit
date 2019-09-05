@@ -3,6 +3,65 @@ from objc_util import *
 from objc_util import ObjCInstanceMethodProxy
 from scene import Rect, Size
 
+
+load_framework('SpriteKit')
+
+SK_classes = [
+  'SKView', 'SKScene', 'SKNode',
+  'SKShapeNode', 'SKSpriteNode',
+  'SKLabelNode',
+  'SKEmitterNode',
+  'SKPhysicsBody',
+  'SKCameraNode', 'SKLightNode',
+  'SKTexture',
+  'SKEffectNode',
+  'SKFieldNode', 'SKRegion',
+  'SKConstraint', 'SKRange',
+  'SKTextureAtlas',
+]
+
+for class_name in SK_classes:
+  globals()[class_name] = ObjCClass(class_name)
+
+
+class Range:
+  
+  def __init__(self, range):
+    self.range = range
+    
+  @property
+  def upper_limit(self):
+    return self.range.upperLimit()
+    
+  @property
+  def lower_limit(self):
+    return self.range.lowerLimit()
+    
+  @classmethod
+  def constant(cls, value):
+    return Range(SKRange.rangeWithConstantValue_(value))
+    
+  @classmethod
+  def lower(cls, limit):
+    return Range(SKRange.rangeWithLowerLimit_(limit))
+    
+  @classmethod
+  def upper(cls, limit):
+    return Range(SKRange.rangeWithUpperLimit_(limit))
+    
+  @classmethod
+  def limits(cls, lower, upper):
+    return Range(SKRange.rangeWithLowerLimit_upperLimit_(lower, upper))
+    
+  @classmethod
+  def no_limits(cls):
+    return Range(SKRange.rangeWithNoLimits())
+    
+  @classmethod
+  def variance(cls, value, variance):
+    return Range(SKRange.rangeWithValue_variance_(value, variance))
+
+
 def py_to_cg(value):
   if type(value) == Size:
     w, h = value
@@ -80,12 +139,20 @@ def node_relay_set(attribute_name):
   return p
   
 def node_convert(attribute_name):
-  '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
       cg_to_py(getter(self.node, attribute_name)),
     lambda self, value:
       setter(self.node, attribute_name, py_to_cg(value))
+  )
+  return p
+  
+def node_range(attribute_name):
+  p = property(
+    lambda self:
+      Range(getter(self.node, attribute_name)),
+    lambda self, value:
+      setter(self.node, attribute_name, value.range)
   )
   return p
   

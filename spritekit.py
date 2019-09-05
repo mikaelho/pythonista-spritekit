@@ -11,25 +11,6 @@ from scripter import *
 
 from util import *
 
-load_framework('SpriteKit')
-
-SK_classes = [
-  'SKView', 'SKScene', 'SKNode',
-  'SKShapeNode', 'SKSpriteNode',
-  'SKLabelNode',
-  'SKPhysicsBody',
-  'SKCameraNode', 'SKLightNode',
-  'SKTexture',
-  'SKFieldNode', 'SKRegion',
-  'SKConstraint', 'SKRange',
-  'SKTextureAtlas',
-]
-# 'CGMutablePath'
-for class_name in SK_classes:
-  globals()[class_name] = ObjCClass(class_name)
-
-
-
 class Node:
   
   default_physics = None
@@ -133,6 +114,9 @@ class Node:
       
   def as_texture(self):
     return Texture.from_node(self)
+    
+  def apply_impulse(self, impulse):
+    self.body.applyImpulse_(impulse)
   
   def apply_angular_impulse(self, impulse):
     self.body.applyAngularImpulse_(impulse)
@@ -142,11 +126,15 @@ class Node:
   
   def apply_torque(self, torque):
     self.body.applyTorque_(torque)
+    
+  def __getitem__(self, key):
+    node = self.node.childNodeWithName_(key)
+    return None if node is None else ObjCInstance(node).py_node
   
   affected_by_gravity = physics_relay('affectedByGravity')   
   allows_rotation = physics_relay('allowsRotation')
   alpha = node_relay('alpha')
-  anchor_point = node_convert('_anchorPoint')
+  anchor_point = node_convert('anchorPoint')
   area = physics_relay_readonly('area')
   angular_damping = physics_relay('angularDamping')
   angular_velocity = physics_relay('angularVelocity')
@@ -169,10 +157,25 @@ class Node:
   position = node_convert('position')
   resting = physics_relay_readonly('isResting')
   restitution = physics_relay('restitution')
-  rotation = node_relay('zRotation')
+  
+  @prop
+  def rotation(self, *args):
+    if args:
+      value = args[0]
+      if 'rotation_offset' in dir(self):
+        value += self.rotation_offset
+      self.node.setZRotation_(value)
+    else:
+      value = self.node.zRotation()
+      if 'rotation_offset' in dir(self):
+        value -= self.rotation_offset
+      return value
+  
+  #rotation = node_relay('zRotation')
   scale_x = node_relay('xScale')
   scale_y = node_relay('yScale')
   size = node_convert('size')
+  total_frame = node_convert('calculateAccumulatedFrame')
   touch_enabled = node_relay('userInteractionEnabled')
   velocity = physics_vector('velocity')
   z_position = node_relay('zPosition')
@@ -180,9 +183,33 @@ class Node:
   def needs_body(self, kwargs):
     return not kwargs.pop('no_body', False)
 
-class ShapeNode(Node):
+
+class ShapeProperties:
+    
+  antialiased = node_relay('antialiased')
+      
+  @prop
+  def fill_texture(self, *args):
+    if args:
+      value = args[0]
+      if value is not None:
+        value = value.texture
+      self.node.fillTexture = value
+    else:
+      value = self.node.fillTexture
+      if value is not None:
+        value = Texture(value)
+      return value
+      
+  glow_width = node_relay('glowWidth')
+  line_color = node_color('strokeColor')
+  line_width = node_relay('lineWidth')
+  line_length = node_relay('lineLength')
   
-  def __init__(self, path_or_points, smooth=False, hull=True, **kwargs):
+
+class ShapeNode(Node, ShapeProperties):
+  
+  def __init__(self, path_or_points, smooth=False, hull=False, **kwargs):
     path_given = type(path_or_points) == ui.Path
     if smooth:
       path = ShapeNode.smooth(path_or_points)
@@ -312,6 +339,7 @@ class ShapeNode(Node):
     u = functools.reduce(_keep_left, reversed(points), [])
     return l.extend(u[i] for i in range(1, len(u) - 1)) or l
     
+  '''
   @classmethod
   def simple(cls, points, path=None):
     if len(points) < 2: return
@@ -432,27 +460,29 @@ class ShapeNode(Node):
         *points[i], *control_point(mid, points[i]))
       p1 = points[i]
     return path
-    
-  antialiased = node_relay('antialiased')
-      
-  @prop
-  def fill_texture(self, *args):
-    if args:
-      value = args[0]
-      if value is not None:
-        value = value.texture
-      self.node.fillTexture = value
-    else:
-      value = self.node.fillTexture
-      if value is not None:
-        value = Texture(value)
-      return value
-      
-  glow_width = node_relay('glowWidth')
-  line_color = node_color('strokeColor')
-  line_width = node_relay('lineWidth')
-  line_length = node_relay('lineLength')
+  '''
   
+  
+class BoxNode(Node, ShapeProperties):
+  
+  def __init__(self, size=(100,100), **kwargs):    
+    size = py_to_cg(Size(*size))
+    self.node = node = SKShapeNode.shapeNodeWithRectOfSize_(size)
+    
+    if self.needs_body(kwargs):
+      node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
+    
+    super().__init__(**kwargs)
+  
+  '''
+  @prop
+  def size(self, *args):
+    if args:
+      w, h = self._size = args[0]
+      self.path = ui.Path.rect(-w/2, -h/2, w, h)
+    else:
+      return self._size
+  '''
 
 class PathNode(Node):
   
@@ -609,26 +639,6 @@ class ConvexNode(PathNode):
     return l.extend(u[i] for i in range(1, len(u) - 1)) or l
 
 
-class BoxNode(PathNode):
-  
-  def __init__(self, size=(100,100), **kwargs):    
-    size = py_to_cg(Size(*size))
-    self.node = node = SKShapeNode.shapeNodeWithRectOfSize_(size)
-    
-    if not kwargs.pop('no_body', False):
-      node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
-    
-    super().__init__(None, **kwargs)
-    
-  @prop
-  def size(self, *args):
-    if args:
-      w, h = self._size = args[0]
-      self.path = ui.Path.rect(-w/2, -h/2, w, h)
-    else:
-      return self._size
-
-
 class CameraNode(Node):
   
   def __init__(self, **kwargs):
@@ -726,10 +736,11 @@ class SpriteNode(Node):
       texture = SKTexture.textureWithImage_(ObjCInstance(image))
     '''
     self.node = TouchSpriteNode.spriteNodeWithTexture_(texture)
-    if alpha_threshold is None:
-      self.node.physicsBody = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
-    else:
-      self.node.physicsBody = SKPhysicsBody.bodyWithTexture_alphaThreshold_size_(texture, alpha_threshold, texture.size())
+    if self.needs_body(kwargs):
+      if alpha_threshold is None:
+        self.node.physicsBody = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+      else:
+        self.node.physicsBody = SKPhysicsBody.bodyWithTexture_alphaThreshold_size_(texture, alpha_threshold, texture.size())
     super().__init__(**kwargs)
     
   @property
@@ -845,6 +856,96 @@ class FieldNode(Node):
     else:
       return Region(self.node.region)
   
+  
+class EffectNode(Node):
+  
+  def __init__(self, **kwargs):
+    self.node = SKEffectNode.alloc().init()
+    super().__init__(**kwargs)
+  
+  cache_content = node_relay('shouldRasterize')
+  
+  
+class Background(Node):
+  ''' Manages background layers. '''
+  
+  def __init__(self, tiles=None, **kwargs):
+    super().__init__(**kwargs)
+    self.z_position = -10
+    self.layers = list_callback.NotifyList(callback=self._layers_update)
+    if tiles is not None:
+      if type(tiles) not in [tuple, list]:
+        tiles = [tiles]
+      for tile in tiles:
+        self.layers.append(BackgroundLayer(tile))
+      self.delta_pan()
+    
+  def _layers_update(self):
+    for i, layer in enumerate(self.layers):
+      layer.z_position = -i
+      layer.parent = self
+      layer.layout()
+    self.delta_pan()
+    
+  def delta_pan(self, delta=Point(0,0)):
+    for layer in self.layers:
+      layer.delta_pan(delta)
+  
+  def delta_scale(self, delta):
+    for layer in self.layers:
+      layer.delta_scale(delta)
+  
+  
+class BackgroundLayer(EffectNode):
+  
+  def __init__(self, tile, pan_factor=1, scale_factor=1, **kwargs):
+    super().__init__(**kwargs)
+    self.cache_content = True
+    self.tile = tile
+    self.pan_factor = pan_factor
+    self.scale_factor = scale_factor
+  
+  def delta_pan(self, delta):
+    delta = delta * self.pan_factor
+    x, y = self.position
+    x = (x - delta.x) % self.tile.size.x
+    y = (y - delta.y) % self.tile.size.y
+    self.position = (x,y)
+    self.layout()
+    
+  def delta_scale(self, delta):
+    self.scale *= (delta * self.scale_factor)
+    self.layout()
+    
+  def layout(self):
+    cx, cy, cw, ch = self.total_frame
+    tw, th = self.tile.size
+    cols, rows = int(cw/tw), int(ch/th)
+    x, y, w, h = self.scene.bounds
+    if w > cw/3 or h > ch/3:
+      h_count = int(3 * math.ceil(w/tw))
+      v_count = int(3 * math.ceil(h/th))
+      h_end = math.floor(h_count/2)
+      h_start = -(h_count - h_end)
+      v_end = math.floor(v_count/2)
+      v_start = -(v_count - v_end)
+      for col in range(h_start, h_end):
+        for row in range(v_start, v_end):
+          if self[f'cr{row}{col}'] is None:
+            s = SpriteNode(self.tile,
+              name=f'cr{row}{col}',
+              no_body=True,
+              position=(col*tw, row*th),
+              parent=self)
+      point = Point(
+        math.floor(h_count/2)/h_count,
+        math.floor(v_count/2)/v_count
+      )
+      self.anchor_point = point
+      self.position = (0,0)
+      #print(self.anchor_point)
+    
+  
 class Region:
   
   def __init__(self, region):
@@ -893,6 +994,66 @@ class Region:
     return self.region.containsPoint(py_to_cg(point))
     
     
+class EmitterNode(Node):
+  
+  def __init__(self, **kwargs):
+    self.node = SKEmitterNode.alloc().init()
+    super().__init__(**kwargs)
+  
+  @prop
+  def target_node(self, *args):
+    if args:
+      value = args[0]
+      self.node.setTargetNode_(value.node)
+    else:
+      target = self.node.targetNode()
+      if target is None: return None
+      else: return target.py_node
+  
+  emission_angle = node_relay('emissionAngle')
+  emission_angle_range = node_relay('emissionAngleRange')
+  emission_distance = node_relay('emissionDistance')
+  emission_distance_range = node_range('emissionDistanceRange')
+  field_bit_mask = node_relay('fieldBitMask')
+  num_particles_to_emit = node_relay('numParticlesToEmit')
+  particle_action = node_relay('particleAction')
+  particle_alpha = node_relay('particleAlpha')
+  particle_alpha_range = node_relay('particleAlphaRange')
+  particle_alpha_speed = node_relay('particleAlphaSpeed')
+  particle_birth_rate = node_relay('particleBirthRate')
+  particle_blend_mode = node_relay('particleBlendMode')
+  particle_color = node_color('particleColor')
+  particle_color_alpha_range = node_range('particleColorAlphaRange')
+  particle_color_alpha_speed = node_relay('particleColorAlphaSpeed')
+  particle_cplor_blend_factor = node_relay('particleColorBlendFactor')
+  particle_color_blend_factor_range = node_relay('particleColorBlendFactorRange')
+  particle_color_blend_factor_speed = node_relay('particleColorBlendFactorSpeed')
+  particle_color_blue_range = node_range('particleColorBlueRange')
+  particle_color_blue_speed = node_relay('particleColorBlueSpeed')
+  particle_color_green_range = node_range('particleColorGreenRange')
+  particle_color_green_speed = node_relay('particleColorGreenSpeed')
+  particle_color_red_range = node_range('particleColorRedRange')
+  particle_color_red_speed = node_relay('particleColorRedSpeed')
+  particle_density = node_relay('particleDensity')
+  particle_life_time = node_relay('particleLifetime')
+  particle_life_time_range = node_range('particleLifetimeRange')
+  particle_position = node_relay('particlePosition')
+  particle_position_range = node_range('particlePositionRange')
+  particle_render_order = node_relay('particleRenderOrder')
+  particle_rotation = node_relay('particleRotation')
+  particle_rotation_range = node_range('particleRotationRange')
+  particle_rotation_speed = node_relay('particleRotationSpeed')
+  particle_scale = node_relay('particleScale')
+  particle_scale_range = node_range('particleScaleRange')
+  particle_scale_speed = node_relay('particleScaleSpeed')
+  particle_size = node_convert('particleSize')
+  particle_speed = node_relay('particleSpeed')
+  particle_speed_range = node_range('particleSpeedRange')
+  particle_texture = node_relay('particleTexture')
+  particle_z_position = node_relay('particleZPosition')
+  particle_z_position_range = node_range('particleZPositionRange')
+  particle_z_position_speed = node_relay('particleZPositionSpeed')
+    
 class Constraint:
   
   def __init__(self, constraint):
@@ -916,21 +1077,21 @@ class Constraint:
       return self.constraint.referenceNode().py_node
   
   @classmethod
-  def distance_to_node(cls, node, distance):
+  def distance_to_node(cls, node, distance=Range.constant(0)):
     assert isinstance(node, Node)
     assert type(distance) == Range
     return Constraint(SKConstraint.distance_toNode_(
       distance.range, node.node))
   
   @classmethod
-  def distance_to_point(cls, point, distance):
+  def distance_to_point(cls, point, distance=Range.constant(0)):
     point = py_to_cg(point)
     assert type(distance) == Range
     return Constraint(SKConstraint.distance_toPoint_(
       distance.range, point))
   
   @classmethod
-  def distance_to_point_in_node(cls, point, node, distance):
+  def distance_to_point_in_node(cls, point, node, distance=Range.constant(0)):
     point = py_to_cg(point)
     assert isinstance(node, Node)
     assert type(distance) == Range
@@ -938,21 +1099,21 @@ class Constraint:
       distance.range, point, node.node))
   
   @classmethod
-  def orient_to_node(cls, node, offset):
+  def orient_to_node(cls, node, offset=Range.constant(0)):
     assert isinstance(node, Node)
     assert type(offset) == Range
     return Constraint(SKConstraint.orientToNode_offset_(
       node.node, offset.range))
       
   @classmethod
-  def orient_to_point(cls, point, offset):
+  def orient_to_point(cls, point, offset=Range.constant(0)):
     point = py_to_cg(point)
     assert type(offset) == Range
     return Constraint(SKConstraint.orientToPoint_offset_(
       point, offset.range))
       
   @classmethod
-  def orient_to_point_in_node(cls, point, node, offset):
+  def orient_to_point_in_node(cls, point, node, offset=Range.constant(0)):
     point = py_to_cg(point)
     assert isinstance(node, Node)
     assert type(offset) == Range
@@ -960,85 +1121,47 @@ class Constraint:
       point, node.node, offset.range))
   
   @classmethod
-  def position(cls, x_range, y_range):
+  def position(cls, x_range=Range.constant(0), y_range=Range.constant(0)):
     assert type(x_range) == Range
     assert type(y_range) == Range
     return Constraint(SKConstraint.positionX_Y_(
       x_range.range, y_range.range))
       
   @classmethod
-  def position_x(cls, x_range):
+  def position_x(cls, x_range=Range.constant(0)):
     assert type(x_range) == Range
     return Constraint(SKConstraint.positionX_(
       x_range.range))
       
   @classmethod
-  def position_y(cls, y_range):
+  def position_y(cls, y_range=Range.constant(0)):
     assert type(y_range) == Range
     return Constraint(SKConstraint.positionY_(
       y_range.range))
       
   @classmethod
-  def rotation(cls, range):
+  def rotation(cls, range=Range.constant(0)):
     assert type(range) == Range
     return Constraint(SKConstraint.zRotation_(
       range.range))
   
   @classmethod
-  def scale(cls, scale_range):
+  def scale(cls, scale_range=Range.constant(1)):
     assert type(scale_range) == Range
     return Constraint(SKConstraint.scaleX_scaleY_(
       scale_range.range, scale_range.range))
       
   @classmethod
-  def scale_x(cls, x_range):
+  def scale_x(cls, x_range=Range.constant(1)):
     assert type(x_range) == Range
     return Constraint(SKConstraint.scaleX_(
       x_range.range))
       
   @classmethod
-  def scale_y(cls, y_range):
+  def scale_y(cls, y_range=Range.constant(1)):
     assert type(y_range) == Range
     return Constraint(SKConstraint.scaleY_(
       y_range.range))
-
-  
-class Range:
-  
-  def __init__(self, range):
-    self.range = range
-    
-  @property
-  def upper_limit(self):
-    return self.range.upperLimit()
-    
-  @property
-  def lower_limit(self):
-    return self.range.lowerLimit()
-    
-  @classmethod
-  def constant(cls, value):
-    return Range(SKRange.rangeWithConstantValue_(value))
-    
-  @classmethod
-  def lower(cls, limit):
-    return Range(SKRange.rangeWithLowerLimit_(limit))
-    
-  @classmethod
-  def upper(cls, limit):
-    return Range(SKRange.rangeWithUpperLimit_(limit))
-    
-  @classmethod
-  def limits(cls, lower, upper):
-    return Range(SKRange.rangeWithLowerLimit_upperLimit_(lower, upper))
-    
-  @classmethod
-  def no_limits(cls):
-    return Range(SKRange.rangeWithNoLimits())
-    
-  @classmethod
-  def variance(cls, value, variance):
-    return Range(SKRange.rangeWithValue_variance_(value, variance))
     
 
 class SpriteTouch:
@@ -1408,6 +1531,16 @@ class BilliardsPhysics(BasePhysics):
   friction = 0.2
   linear_damping = 0.3
   restitution = 0.6
+  
+class UIPhysics(BasePhysics):
+  gravity = (0, 0)
+  affected_by_gravity = False
+  allows_rotation = False
+  bullet_physics = False
+  dynamic = True
+  friction = 0.2
+  linear_damping = 0.0
+  restitution = 0.0
 
 @on_main_thread
 def run(scene, **kwargs):
@@ -1426,6 +1559,13 @@ class Texture:
       self.texture = image_data.texture
     else:
       self.texture = image_data
+    
+  @prop
+  def size(self, *args):
+    if args:
+      value = args[0]
+    else:
+      return cg_to_py(self.texture.size())
     
   def crop(self, rect):
     return Texture(SKTexture.textureWithRect_inTexture_(py_to_cg(rect), self.texture))
