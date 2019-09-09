@@ -18,15 +18,13 @@ class Node:
   def __init__(self, **kwargs):
     self._parent = None
     self._children = []
-    self.constraints = list_callback.NotifyList(callback=self._constraint_update)
-
+    self._constraints = list_callback.NotifyList(callback=self._constraint_update)
     if not hasattr(self, 'node'):
       self.node = SKNode.alloc().init()
     self.node.py_node = self
     
     self.paused = False
     self.speed = 1.0
-    #self.scene = None
     
     if (self.default_physics is not None and
         self.body is not None and
@@ -60,6 +58,16 @@ class Node:
   def children(self):
     return self._children
   
+  @prop
+  def constraints(self, *args):
+    if args:
+      value = args[0]
+      self._constraints = list_callback.NotifyList(callback=self._constraint_update)
+      for c in value:
+        self._constraints.append(c)
+    else:
+      return self._constraints
+
   def add_constraint(self, constraint):
     self.constraints.append(constraint)
     
@@ -181,7 +189,7 @@ class Node:
   z_position = node_relay('zPosition')
 
   def needs_body(self, kwargs):
-    return not kwargs.pop('no_body', False)
+    return not kwargs.get('no_body', False)
 
 
 class ShapeProperties:
@@ -210,32 +218,76 @@ class ShapeProperties:
 class ShapeNode(Node, ShapeProperties):
   
   def __init__(self, path_or_points, smooth=False, hull=False, **kwargs):
+    self._path = None
+    self.smooth = smooth
+    self.hull = hull
+    self.create_body = self.needs_body(kwargs)
+    self.path = path_or_points
+    super().__init__(**kwargs)
+    
+  @prop
+  def path(self, *args):
+    if args:
+      path_or_points = args[0]
+      path_given = type(path_or_points) == ui.Path
+      if self.smooth:
+        path = ShapeNode.smooth(path_or_points)
+      elif not path_given:
+        path = ShapeNode.path_from_points(path_or_points)
+      else:
+        path = path_or_points
+      self._path = path
+      if self.hull:
+        self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
+        points = ShapeNode.points_from_path(path_or_points) if path_given else path_or_points
+        hull_path = ShapeNode.path_from_points(
+          ShapeNode.hull(points), 
+          start_with_move=False
+        )
+        if self.create_body:
+          cgpath = hull_path.objc_instance.CGPath()
+          physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
+          self.node.setPhysicsBody_(physics)
+      else:
+        self.node = TouchShapeNode.shapeNodeWithPath_centered_(path.objc_instance.CGPath(), True)
+        if self.create_body:
+          texture = SKView.alloc().init().textureFromNode_(self.node)
+          physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+          self.node.setPhysicsBody_(physics)
+      #super().__init__(**kwargs)
+      if not self.hull:
+        x,y,w,h = path.bounds
+        self.position += (w/2+x,h/2+y)
+    else:
+      return self._path
+      
+  def _path_setup(self, path_or_points):
     path_given = type(path_or_points) == ui.Path
-    if smooth:
+    if self.smooth:
       path = ShapeNode.smooth(path_or_points)
     elif not path_given:
       path = ShapeNode.path_from_points(path_or_points)
     else:
       path = path_or_points
-    if hull:
+    if self.hull:
       self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
       points = ShapeNode.points_from_path(path_or_points) if path_given else path_or_points
       hull_path = ShapeNode.path_from_points(
         ShapeNode.hull(points), 
         start_with_move=False
       )
-      if self.needs_body(kwargs):
+      if self.create_body:
         cgpath = hull_path.objc_instance.CGPath()
         physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
         self.node.setPhysicsBody_(physics)
     else:
       self.node = TouchShapeNode.shapeNodeWithPath_centered_(path.objc_instance.CGPath(), True)
-      if self.needs_body(kwargs):
+      if self.create_body:
         texture = SKView.alloc().init().textureFromNode_(self.node)
         physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
         self.node.setPhysicsBody_(physics)
-    super().__init__(**kwargs)
-    if not hull:
+    #super().__init__(**kwargs)
+    if not self.hull:
       x,y,w,h = path.bounds
       self.position += (w/2+x,h/2+y)
     
