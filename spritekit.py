@@ -76,6 +76,12 @@ class Node:
       c.constraint for c in self.constraints]
     self.node.setConstraints_(sk_constraints)
       
+  def run_action(self, action, key=None):
+    if key is None:
+      key = str(uuid.uuid4())
+    self.node.runAction_withKey_(action, key)
+    return key
+      
   def convert_point_to(self, point, node):
     return cg_to_py(
       self.node.convertPoint_toNode_(
@@ -222,42 +228,57 @@ class ShapeNode(Node, ShapeProperties):
     self.smooth = smooth
     self.hull = hull
     self.create_body = self.needs_body(kwargs)
-    self.path = path_or_points
+    path = self.get_path(path_or_points)
+    self._path = path
+    if self.hull:
+      self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
+    else:
+      self.node = TouchShapeNode.shapeNodeWithPath_centered_(path.objc_instance.CGPath(), True)
+    self._create_body(path_or_points)
     super().__init__(**kwargs)
+    if not self.hull:
+      x,y,w,h = path.bounds
+      self.position += (w/2+x,h/2+y)
+    
+  def get_path(self, path_or_points, smooth=False):
+    path_given = type(path_or_points) == ui.Path
+    if self.smooth:
+      path = ShapeNode.smooth(path_or_points)
+    elif type(path_or_points) != ui.Path:
+      path = ShapeNode.path_from_points(path_or_points)
+    else:
+      path = path_or_points
+    return path
+    
+  def _create_body(self, path_or_points):
+    if not self.create_body: return 
+    if self.hull:
+      points = ShapeNode.points_from_path(path_or_points) if type(path_or_points) == ui.Path else path_or_points
+      hull_path = ShapeNode.path_from_points(
+        ShapeNode.hull(points), 
+        start_with_move=False
+      )
+      cgpath = hull_path.objc_instance.CGPath()
+      physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
+      self.node.setPhysicsBody_(physics)
+    else:
+      texture = SKView.alloc().init().textureFromNode_(self.node)
+      physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
+      self.node.setPhysicsBody_(physics)
+    
+  def update_path(self, path_or_points, smooth=False):
+    path = self.get_path(path_or_points, smooth)
+    self.node.setPath_(path.objc_instance.CGPath())
+    self._create_body()
     
   @prop
   def path(self, *args):
     if args:
       path_or_points = args[0]
-      path_given = type(path_or_points) == ui.Path
-      if self.smooth:
-        path = ShapeNode.smooth(path_or_points)
-      elif not path_given:
-        path = ShapeNode.path_from_points(path_or_points)
-      else:
-        path = path_or_points
+      path = self.get_path(path_or_points, self.smooth)
+      self.node.setPath_(path.objc_instance.CGPath())
+      self._create_body(path_or_points)
       self._path = path
-      if self.hull:
-        self.node = TouchShapeNode.shapeNodeWithPath_(path.objc_instance.CGPath())
-        points = ShapeNode.points_from_path(path_or_points) if path_given else path_or_points
-        hull_path = ShapeNode.path_from_points(
-          ShapeNode.hull(points), 
-          start_with_move=False
-        )
-        if self.create_body:
-          cgpath = hull_path.objc_instance.CGPath()
-          physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
-          self.node.setPhysicsBody_(physics)
-      else:
-        self.node = TouchShapeNode.shapeNodeWithPath_centered_(path.objc_instance.CGPath(), True)
-        if self.create_body:
-          texture = SKView.alloc().init().textureFromNode_(self.node)
-          physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
-          self.node.setPhysicsBody_(physics)
-      #super().__init__(**kwargs)
-      if not self.hull:
-        x,y,w,h = path.bounds
-        self.position += (w/2+x,h/2+y)
     else:
       return self._path
       
@@ -691,12 +712,23 @@ class ConvexNode(PathNode):
     return l.extend(u[i] for i in range(1, len(u) - 1)) or l
 
 
+class EffectNode(Node):
+  
+  def __init__(self, **kwargs):
+    self.node = SKEffectNode.alloc().init()
+    super().__init__(**kwargs)
+  
+  cache_content = node_relay('shouldRasterize')
+  
+
 class CameraNode(Node):
   
   def __init__(self, **kwargs):
     self.node = SKCameraNode.alloc().init()
     self.corners = None
+    self.layers = list_callback.NotifyList(callback=self._layers_update)
     super().__init__(**kwargs)
+    self.prev_position = self.position
     
   def resize(self):
     w,h = self.scene.size
@@ -706,21 +738,6 @@ class CameraNode(Node):
         x = anchor.anchor_point.x * w - w/2 + anchor.offset.x
         y = anchor.anchor_point.y * h - h/2 + anchor.offset.y
         node.position = (x, y)
-    '''
-    print('bounds', self.scene.bounds)
-    print('size', self.scene.size)
-    print('anchor', self.scene.anchor_point)
-    print('frame', self.scene.frame)
-    print('camera', self.position)
-    #c = self.convert_rect_from(b, self.scene)
-    
-    CircleNode(30,
-      fill_color=(random.random(), random.random(), random.random()),
-      no_body=True,
-      position=(w/2,h/2),
-      parent=self)
-    '''
-
     
   def visible(self, node):
     return self.node.containsNode_(node.node)
@@ -730,7 +747,81 @@ class CameraNode(Node):
     for sk_node in self.node.containedNodeSet_():
       visible.add(sk_node.py_node)
     return visible
-
+    
+  def update_layers(self):
+    delta = self.position - self.prev_position
+    self.prev_position = self.position
+    if abs(delta) > 0 and len(self.layers):
+      self.delta_pan(delta)
+    
+  def _layers_update(self):
+    for i, layer in enumerate(self.layers):
+      layer.z_position = -(i+1)*10
+      layer.parent = self
+      layer.layout()
+    self.delta_pan()
+    
+  def delta_pan(self, delta=Point(0,0)):
+    delta = Point(*delta)
+    for layer in self.layers:
+      layer.delta_pan(delta)
+  
+  def delta_scale(self, delta=1):
+    for layer in self.layers:
+      layer.delta_scale(delta)
+  
+  
+class Layer(EffectNode):
+  
+  def __init__(self, tile, pan_factor=1, scale_factor=1, **kwargs):
+    super().__init__(**kwargs)
+    self.cache_content = True
+    self.tile = tile
+    if type(pan_factor) in (tuple, list):
+      pan_factor = Point(*pan_factor)
+    self.pan_factor = pan_factor
+    self.scale_factor = scale_factor
+  
+  def delta_pan(self, delta):
+    delta = delta * self.pan_factor
+    x, y = self.position
+    x = (x - delta.x) % self.tile.size.x
+    y = (y - delta.y) % self.tile.size.y
+    self.position = (x,y)
+    self.layout()
+    
+  def delta_scale(self, delta):
+    self.scale *= (delta * self.scale_factor)
+    self.layout()
+    
+  def layout(self):
+    cx, cy, cw, ch = self.total_frame
+    tw, th = self.tile.size
+    cols, rows = int(cw/tw), int(ch/th)
+    x, y, w, h = self.scene.bounds
+    if w > cw/3 or h > ch/3:
+      h_count = int(3 * math.ceil(w/tw))
+      v_count = int(3 * math.ceil(h/th))
+      h_end = math.floor(h_count/2)
+      h_start = -(h_count - h_end)
+      v_end = math.floor(v_count/2)
+      v_start = -(v_count - v_end)
+      for col in range(h_start, h_end):
+        for row in range(v_start, v_end):
+          if self[f'cr{row}{col}'] is None:
+            s = SpriteNode(self.tile,
+              name=f'cr{row}{col}',
+              no_body=True,
+              position=(col*tw, row*th),
+              parent=self)
+      point = Point(
+        math.floor(h_count/2)/h_count,
+        math.floor(v_count/2)/v_count
+      )
+      self.anchor_point = point
+      self.position = (0,0)
+      #print(self.anchor_point)
+      
 
 class Anchor:
   
@@ -909,93 +1000,11 @@ class FieldNode(Node):
       return Region(self.node.region)
   
   
-class EffectNode(Node):
-  
-  def __init__(self, **kwargs):
-    self.node = SKEffectNode.alloc().init()
-    super().__init__(**kwargs)
-  
-  cache_content = node_relay('shouldRasterize')
-  
-  
 class Background(Node):
   ''' Manages background layers. '''
   
   def __init__(self, tiles=None, **kwargs):
     super().__init__(**kwargs)
-    self.z_position = -10
-    self.layers = list_callback.NotifyList(callback=self._layers_update)
-    if tiles is not None:
-      if type(tiles) not in [tuple, list]:
-        tiles = [tiles]
-      for tile in tiles:
-        self.layers.append(BackgroundLayer(tile))
-      self.delta_pan()
-    
-  def _layers_update(self):
-    for i, layer in enumerate(self.layers):
-      layer.z_position = -i
-      layer.parent = self
-      layer.layout()
-    self.delta_pan()
-    
-  def delta_pan(self, delta=Point(0,0)):
-    for layer in self.layers:
-      layer.delta_pan(delta)
-  
-  def delta_scale(self, delta):
-    for layer in self.layers:
-      layer.delta_scale(delta)
-  
-  
-class BackgroundLayer(EffectNode):
-  
-  def __init__(self, tile, pan_factor=1, scale_factor=1, **kwargs):
-    super().__init__(**kwargs)
-    self.cache_content = True
-    self.tile = tile
-    self.pan_factor = pan_factor
-    self.scale_factor = scale_factor
-  
-  def delta_pan(self, delta):
-    delta = delta * self.pan_factor
-    x, y = self.position
-    x = (x - delta.x) % self.tile.size.x
-    y = (y - delta.y) % self.tile.size.y
-    self.position = (x,y)
-    self.layout()
-    
-  def delta_scale(self, delta):
-    self.scale *= (delta * self.scale_factor)
-    self.layout()
-    
-  def layout(self):
-    cx, cy, cw, ch = self.total_frame
-    tw, th = self.tile.size
-    cols, rows = int(cw/tw), int(ch/th)
-    x, y, w, h = self.scene.bounds
-    if w > cw/3 or h > ch/3:
-      h_count = int(3 * math.ceil(w/tw))
-      v_count = int(3 * math.ceil(h/th))
-      h_end = math.floor(h_count/2)
-      h_start = -(h_count - h_end)
-      v_end = math.floor(v_count/2)
-      v_start = -(v_count - v_end)
-      for col in range(h_start, h_end):
-        for row in range(v_start, v_end):
-          if self[f'cr{row}{col}'] is None:
-            s = SpriteNode(self.tile,
-              name=f'cr{row}{col}',
-              no_body=True,
-              position=(col*tw, row*th),
-              parent=self)
-      point = Point(
-        math.floor(h_count/2)/h_count,
-        math.floor(v_count/2)/v_count
-      )
-      self.anchor_point = point
-      self.position = (0,0)
-      #print(self.anchor_point)
     
   
 class Region:
@@ -1105,6 +1114,133 @@ class EmitterNode(Node):
   particle_z_position = node_relay('particleZPosition')
   particle_z_position_range = node_range('particleZPositionRange')
   particle_z_position_speed = node_relay('particleZPositionSpeed')
+
+
+def _action(objc_func_name):
+  @classmethod
+  def f(cls, duration=0.5):
+    return getattr(SKAction, objc_func_name)(duration)
+  return f
+  
+def _action_scalar(objc_func_name):
+  @classmethod
+  def f(cls, scalar, duration=0.5):
+    return getattr(SKAction, objc_func_name)(scalar, duration)
+  return f
+  
+def _action_vector(objc_func_name):
+  @classmethod
+  def f(cls, vector, duration=0.5):
+    cgvector = CGVector(*vector)
+    return getattr(SKAction, objc_func_name)(
+      vector, duration)
+  return f
+  
+def _action_vector_point(objc_func_name):
+  @classmethod
+  def f(cls, vector, point, duration=0.5):
+    cgvector = CGVector(*vector)
+    return getattr(SKAction, objc_func_name)(
+      vector,
+      py_to_cg(point),
+      duration)
+  return f
+  
+def _action_path(objc_func_name):
+  @classmethod
+  def f(cls, path, duration=0.5):
+    assert type(path) == ui.Path
+    cgpath = path.objc_instance.CGPath()
+    return getattr(SKAction, objc_func_name)(cgpath, duration)
+  return f
+  
+class Action:
+  
+  angular_impulse = _action_scalar('applyAngularImpulse_duration_')
+  force_at = _action_vector_point('applyForce_atPoint_duration_')
+  force = _action_vector('applyForce_duration_')
+  impulse_at = _action_vector_point('applyImpulse_atPoint_duration_')
+  impulse = _action_vector('applyImpulse_duration_')
+  torque = _action_scalar('applyTorque_duration_')
+  charge_by = _action_scalar('changeChargeBy_duration_'
+  )
+  charge_to = _action_scalar('changeChargeTo_duration_')
+  mass_by = _action_scalar('changeMassBy_duration_')
+  mass_to = _action_scalar('changeMassTo_duration_')
+  obstruction_by = _action_scalar('changeObstructionBy_duration_')
+  obstruction_to = _action_scalar('changeObstructionTo_duration_')
+  occlusion_by = _action_scalar('changeOcclusionBy_duration_')
+  occlusion_to = _action_scalar('changeOcclusionTo_duration_')
+  playback_rate_by = _action_scalar('changePlaybackRateBy_duration_')
+  playback_rate_to = _action_scalar('changePlaybackRateTo_duration_')
+  reverb_by = _action_scalar('changeReverbBy_duration_')
+  reverb_to = _action_scalar('changeReverbTo_duration_')
+  volume_by = _action_scalar('changeVolumeBy_duration_')
+  volume_to = _action_scalar('changeVolumeTo_duration_')
+  alpha_by = _action_scalar('fadeAlphaBy_duration_')
+  alpha_to = _action_scalar('fadeAlphaTo_duration_')
+  fade_in = _action('fadeInWithDuration_')
+  fade_out = _action('fadeOutWithDuration_')
+  falloff_by = _action_scalar('falloffBy_duration_')
+  falloff_to = _action_scalar('falloffTo_duration_')
+  follow_path = _action_path('followPath_duration_')
+  move_by = _action_vector('moveBy_duration_')
+  move_to = _action_vector('moveTo_duration_')
+  move_to_x = _action_scalar('moveToX_duration_')
+  move_to_y = _action_scalar('moveToY_duration_')
+'''
+colorizeWithColorBlendFactor_duration_
+colorizeWithColor_colorBlendFactor_duration_
+convertAction_toDuration_
+followPath_asOffset_orientToPath_duration_
+followPath_asOffset_orientToPath_speed_
+followPath_speed_
+
+group_
+
+moveByX_y_duration_
+
+play
+playSoundFileNamed_
+playSoundFileNamed_atPosition_waitForCompletion_
+playSoundFileNamed_waitForCompletion_
+reachToNode_rootNode_duration_
+reachToNode_rootNode_velocity_
+reachTo_rootNode_duration_
+reachTo_rootNode_velocity_
+recursivePathsForResourcesOfType_inDirectory_
+repeatActionForever_
+repeatAction_count_
+resizeByWidth_height_duration_
+resizeToHeight_duration_
+resizeToWidth_duration_
+resizeToWidth_height_duration_
+rotateByAngle_duration_
+rotateToAngle_duration_
+rotateToAngle_duration_shortestUnitArc_
+scaleBy_duration_
+scaleToSize_duration_
+scaleTo_duration_
+scaleXBy_y_duration_
+scaleXTo_duration_
+scaleXTo_y_duration_
+scaleYTo_duration_
+sequence_
+setNormalTexture_
+setNormalTexture_resize_
+setTexture_
+setTexture_resize_
+speedBy_duration_
+speedTo_duration_
+stereoPanBy_duration_
+stereoPanTo_duration_
+stop
+strengthBy_duration_
+strengthTo_duration_
+waitForDuration_
+waitForDuration_withRange_
+warpTo_duration_
+'''
     
 class Constraint:
   
@@ -1411,7 +1547,10 @@ class Scene(Node):
   
 class TouchScene(Scene):
   
-  def __init__(self, **kwargs):
+  def __init__(self, can_pan=True, can_pinch=False, can_rotate=False, **kwargs):
+    self.can_pan = can_pan
+    self.can_pinch = can_pinch
+    self.can_rotate = can_rotate
     self.viewable_area = None
     super().__init__(**kwargs)
     self.camera = CameraNode(parent=self)
@@ -1523,10 +1662,12 @@ class TouchView(
   ui.View, pygestures.GestureMixin):
       
   def on_tap(self, g):
-    g.location = self.scene.convert_from_view(g.location)
-    self.scene.on_tap(g)
+    if hasattr(self.scene, 'on_tap'):
+      g.location = self.scene.convert_from_view(g.location)
+      self.scene.on_tap(g)
     
   def on_pan(self, g):
+    if not self.scene.can_pan: return
     if g.began:
       self.start_camera_position = self.scene.camera.position
       self.start_scene_location = self.scene.convert_from_view(g.location)
@@ -1540,6 +1681,7 @@ class TouchView(
       self.scene.keep_in_viewable_area()
 
   def on_pinch(self, g):
+    if not self.scene.can_pinch: return
     if g.began:
       self.start_scale = self.scene.camera.scale
     if g.changed:
@@ -1552,6 +1694,7 @@ class TouchView(
       
   '''
   def on_rotate(self, g):
+    if not self.scene.can_rotate: return
     if g.changed:
       delta_rotation = g.prev_rotation - g.rotation
       self.scene.camera.rotation -= math.radians(delta_rotation)
@@ -1595,8 +1738,8 @@ class UIPhysics(BasePhysics):
   restitution = 0.0
 
 @on_main_thread
-def run(scene, **kwargs):
-  scene.view.present(**kwargs)
+def run(scene, *args, **kwargs):
+  scene.view.present(*args, **kwargs)
   #if hasattr(scene, 'setup'):
   #  scene.setup()
   

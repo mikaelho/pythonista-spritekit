@@ -14,20 +14,9 @@ class PoolScene(Scene):
     if self.cue_ball.collision_bitmask == 1:
       p = ui.Path()
       p.line_to(*(self.cue_ball.position - touch.location))
-      #self.power_indicator.path = p
-      scene.power_indicator.parent = None
-      scene.power_indicator = ShapeNode(p,
-        #hidden=True,
-        no_body=True,
-        hull=True,
-        line_color=(1,1,1,0.3),
-        line_width=3,
-        glow_width=2,
-        parent=self,
-        position=touch.location,
-      )
-      #self.power_indicator.position = touch.location
-      #self.power_indicator.hidden = False
+      self.power_indicator.path = p
+      self.power_indicator.position = touch.location
+      self.power_indicator.hidden = False
     else:
       self.cue_ball.position = touch.location
   

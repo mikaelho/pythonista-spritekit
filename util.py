@@ -1,7 +1,7 @@
 import ui
 from objc_util import *
 from objc_util import ObjCInstanceMethodProxy
-from scene import Rect, Size
+from scene import Rect, Size, Vector2
 
 
 load_framework('SpriteKit')
@@ -17,6 +17,7 @@ SK_classes = [
   'SKEffectNode',
   'SKFieldNode', 'SKRegion',
   'SKConstraint', 'SKRange',
+  'SKAction',
   'SKTextureAtlas',
 ]
 

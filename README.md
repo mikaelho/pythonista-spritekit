@@ -2,18 +2,30 @@
 
 If you are familiar with Pythonista scene module, many things will feel familiar. Look at Apple SpriteKit docs for more details.
 
+## About nodes in general
+
+By default, it is assumed that you want your nodes to have an underlying body for physics simulations - if not, you would using the scene module. Thus all visible bodies have a physics body created automatically. If you do not want this to happen, provide the no_body=True parameter at creation, or set node.body=None at a later time.
+
 ## Supported nodes and attributes
 
-* Scene
 * Node
+	* Scene
+
+Visible:
+	* ShapeNode
+		* BoxNode
+		* CircleNode
+	* SpriteNode
+	* LabelNode
+	
+Special:
+	* CameraNode
+	* FieldNode
+	* EmitterNode
+
+Obsolete:
 * PathNode
 * PointsNode
-* BoxNode
-* CircleNode
-* SpriteNode
-* LabelNode
-* CameraNode
-* FieldNode
 
 
 ### Node
@@ -55,9 +67,15 @@ All other nodes are inherited from Node and share its attributes. All writeable 
 * velocity
 * z_position
 
-### PathNode(path)
+### ShapeNode(path)
 
-Argument: ui.Path
+Argument: ui.Path or a list of points
+
+By default creates a shape node with a texture-based body (pixel-level collisions, poorer performance).
+
+Optional:
+* smooth=True to create a smooth spline shape from the given path or points
+* hull=True to create a physics body based on an approximated outer hull surrounding the given points (less accurate, more performant)
 
 Has these attributes:
 
@@ -67,6 +85,7 @@ Has these attributes:
 * glow_width
 * line_color
 * line_width
+* path - update the path (and body)
 
 ### PointsNode(points, smooth=False)
 
@@ -103,6 +122,8 @@ FieldNodes have the following attributes:
 * region - see Region in supporting classes
 
 ### LabelNode(text)
+
+Does not have a physics body. If you need a body, create as a child of a BoxNode.
 
 Attributes:
 
