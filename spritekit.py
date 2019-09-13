@@ -1,4 +1,4 @@
-import random, importlib, math, functools
+import random, importlib, math, functools, uuid
 
 import ui
 from objc_util import *
@@ -79,8 +79,15 @@ class Node:
   def run_action(self, action, key=None):
     if key is None:
       key = str(uuid.uuid4())
+    action = Action.check(action)
     self.node.runAction_withKey_(action, key)
     return key
+    
+  def stop_actions(self, key=None):
+    if key is None:
+      self.node.removeAllActions()
+    else:
+      self.node.removeActionForKey_(key)
       
   def convert_point_to(self, point, node):
     return cg_to_py(
@@ -165,7 +172,7 @@ class Node:
   hidden = node_relay('hidden')
   linear_damping = physics_relay('linearDamping')
   mass = physics_relay('mass')
-  name = str_relay('name')
+  name = node_str('name')
   body = node_relay('physicsBody')
   pinned = physics_relay('pinned')
   position = node_convert('position')
@@ -907,7 +914,7 @@ class LabelNode(Node):
   ALIGN_TOP = 2
   ALIGN_BOTTOM = 3
     
-  text = node_relay('text')
+  text = node_str('text')
   font_color = node_color('fontColor')
   font_name = node_relay('fontName')
   font_size = node_relay('fontSize')
@@ -1118,43 +1125,95 @@ class EmitterNode(Node):
 
 def _action(objc_func_name):
   @classmethod
-  def f(cls, duration=0.5):
-    return getattr(SKAction, objc_func_name)(duration)
+  def f(cls, duration=0.5, timing=None):
+    a = getattr(SKAction, objc_func_name)(duration)
+    if timing is not None:
+      a.setTimingMode_(timing)
+    return a
   return f
   
 def _action_scalar(objc_func_name):
   @classmethod
-  def f(cls, scalar, duration=0.5):
-    return getattr(SKAction, objc_func_name)(scalar, duration)
+  def f(cls, scalar, duration=0.5, timing=None):
+    a = getattr(SKAction, objc_func_name)(scalar, duration)
+    if timing is not None:
+      a.setTimingMode_(timing)
+    return a
   return f
   
 def _action_vector(objc_func_name):
   @classmethod
-  def f(cls, vector, duration=0.5):
+  def f(cls, vector, duration=0.5, timing=None):
     cgvector = CGVector(*vector)
-    return getattr(SKAction, objc_func_name)(
+    a = getattr(SKAction, objc_func_name)(
       vector, duration)
+    if timing is not None:
+      a.setTimingMode_(timing)
+    return a
   return f
   
 def _action_vector_point(objc_func_name):
   @classmethod
-  def f(cls, vector, point, duration=0.5):
+  def f(cls, vector, point, duration=0.5, timing=None):
     cgvector = CGVector(*vector)
-    return getattr(SKAction, objc_func_name)(
+    a = getattr(SKAction, objc_func_name)(
       vector,
       py_to_cg(point),
       duration)
+    if timing is not None:
+      a.setTimingMode_(timing)
+    return a
   return f
   
 def _action_path(objc_func_name):
   @classmethod
-  def f(cls, path, duration=0.5):
+  def f(cls, path, duration=0.5, timing=None):
     assert type(path) == ui.Path
     cgpath = path.objc_instance.CGPath()
-    return getattr(SKAction, objc_func_name)(cgpath, duration)
+    a = getattr(SKAction, objc_func_name)(cgpath, duration)
+    if timing is not None:
+      a.setTimingMode_(timing)
+    return a
   return f
   
 class Action:
+  
+  LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT = range(4)
+  
+  @classmethod
+  def group(cls, actions):
+    actions = [
+      cls.check(action)
+      for action in actions
+    ]
+    return SKAction.group_(actions)
+    
+  @classmethod
+  def sequence(cls, actions):
+    actions = [
+      cls.check(action)
+      for action in actions
+    ]
+    return SKAction.sequence_(actions)
+  
+  @classmethod
+  def repeat(cls, action, count):
+    action = cls.check(action)
+    return SKAction.repeatAction_count_(action, count)
+
+  @classmethod
+  def forever(cls, action):
+    action = cls.check(action)
+    return SKAction.repeatActionForever_(action)
+  
+  @classmethod
+  def check(cls, action):
+    if type(action) == set:
+      return cls.group([a for a in action])
+    elif type(action) in (tuple, list):
+      return cls.sequence(action)
+    else:
+      return action
   
   angular_impulse = _action_scalar('applyAngularImpulse_duration_')
   force_at = _action_vector_point('applyForce_atPoint_duration_')
@@ -1188,6 +1247,8 @@ class Action:
   move_to = _action_vector('moveTo_duration_')
   move_to_x = _action_scalar('moveToX_duration_')
   move_to_y = _action_scalar('moveToY_duration_')
+  scale_by = _action_scalar('scaleBy_duration_')
+  scale_to = _action_scalar('scaleTo_duration_')
 '''
 colorizeWithColorBlendFactor_duration_
 colorizeWithColor_colorBlendFactor_duration_
@@ -1196,10 +1257,8 @@ followPath_asOffset_orientToPath_duration_
 followPath_asOffset_orientToPath_speed_
 followPath_speed_
 
-group_
-
 moveByX_y_duration_
-
+pause
 play
 playSoundFileNamed_
 playSoundFileNamed_atPosition_waitForCompletion_
@@ -1209,8 +1268,6 @@ reachToNode_rootNode_velocity_
 reachTo_rootNode_duration_
 reachTo_rootNode_velocity_
 recursivePathsForResourcesOfType_inDirectory_
-repeatActionForever_
-repeatAction_count_
 resizeByWidth_height_duration_
 resizeToHeight_duration_
 resizeToWidth_duration_
@@ -1218,14 +1275,11 @@ resizeToWidth_height_duration_
 rotateByAngle_duration_
 rotateToAngle_duration_
 rotateToAngle_duration_shortestUnitArc_
-scaleBy_duration_
 scaleToSize_duration_
-scaleTo_duration_
 scaleXBy_y_duration_
 scaleXTo_duration_
 scaleXTo_y_duration_
 scaleYTo_duration_
-sequence_
 setNormalTexture_
 setNormalTexture_resize_
 setTexture_
@@ -1260,7 +1314,7 @@ class Constraint:
     if args:
       value = args[0]
       assert isinstance(value, Node)
-      self.constraint.setReferenceNode_(value, node)
+      self.constraint.setReferenceNode_(value.node)
     else:
       return self.constraint.referenceNode().py_node
   

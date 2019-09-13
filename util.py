@@ -164,12 +164,12 @@ def node_convert_readonly(attribute_name):
   )
   return p
   
-def str_relay(attribute_name):
+def node_str(attribute_name):
   p = property(
     lambda self:
-      str(method_or_not(getattr(self.node, attribute_name))),
+      str(method_or_not(getter(self.node, attribute_name))),
     lambda self, value:
-      setattr(self.node, attribute_name, value)
+      setter(self.node, attribute_name, value)
   )
   return p
   
