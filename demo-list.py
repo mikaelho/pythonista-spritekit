@@ -22,14 +22,13 @@ class ListScene(Scene, pygestures.GestureMixin):
     
 class PhysicalView(ui.View):
   
-  def __init__(self, scene, **kwargs):
+  def __init__(self, scene, margin=8, **kwargs):
     super().__init__(**kwargs)
     self.scene = scene
     _,_,w,h = self.frame
     x,y = scene.convert_from_view(self.center)
-    self.node = BoxNode((w,h), position=(x,y) , parent=scene)
+    self.node = BoxNode((w+margin,h+margin), position=(x,y) , parent=scene)
     self.animation = None
-    self.node.constraints.append(Constraint.position_y(Range.upper(-30)))
     self.node.view = self
     
   def touch_began(self, t):
@@ -46,43 +45,62 @@ class PhysicalView(ui.View):
   def touch_ended(self, t):
     self.node.dynamic = True
     
-class UINode(BoxNode):
+class ListView(ui.View):
   
-  def __init__(self, view, **kwargs):
+  def __init__(self, **kwargs):
     super().__init__(**kwargs)
-    self.view = view
+    self.items = [
+      PhysicalView(scene,
+        frame=(100,100,200,50),
+        background_color='red'
+      ),
+      PhysicalView(scene,
+        frame=(100,101,200,50),
+        background_color='green'
+      ),
+      PhysicalView(scene,
+        frame=(100,102,200,50),
+        background_color='blue'
+      ),
+      PhysicalView(scene,
+        frame=(100,103,200,50),
+        background_color='orange'
+      )
+    ]
+    for v in self.items:
+      self.add_subview(v)
+    self.update_constraints()
     
+  def update_constraints(self):
+
+    for i, v in enumerate(self.items):
+      constraints = [
+        Constraint.position_x(Range.constant(150))
+      ]
+      '''
+      if v != self.items[-1]:
+        constraints.append(
+          Constraint.distance_to_node(self.items[i+1].node, Range.constant(66))
+        )
+      if i == 0:
+        constraints.append(
+          Constraint.position_y(Range.upper(-50))
+        )
+      else:
+        constraints.append(
+          Constraint.distance_to_node(self.items[i-1].node, Range.constant(66))
+        )
+      '''
+
+      v.node.constraints = constraints
+        
     
 scene = ListScene()
 
 v = scene.view
-listview = ui.View(frame=scene.view.bounds,
+listview = ListView(frame=scene.view.bounds,
   flex='WH', background_color='black')
 v.add_subview(listview)
-
-v1 = PhysicalView(scene,
-  frame=(100,100,200,50),
-  background_color='blue'
-)
-v.add_subview(v1)
-
-v2 = PhysicalView(scene,
-  frame=(100,300,200,50),
-  background_color='red'
-)
-v.add_subview(v2)
-
-v3 = PhysicalView(scene,
-  frame=(100,300,200,50),
-  background_color='green'
-)
-v.add_subview(v3)
-
-v4 = PhysicalView(scene,
-  frame=(100,300,200,50),
-  background_color='orange'
-)
-v.add_subview(v4)
 
 #listview.hidden = True
 
