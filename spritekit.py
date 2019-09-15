@@ -1,4 +1,4 @@
-import random, importlib, math, functools, uuid
+import random, importlib, math, functools, uuid, types
 
 import ui
 from objc_util import *
@@ -545,12 +545,17 @@ class ShapeNode(Node, ShapeProperties):
   
 class BoxNode(Node, ShapeProperties):
   
-  def __init__(self, size=(100,100), **kwargs):    
-    size = py_to_cg(Size(*size))
-    self.node = node = SKShapeNode.shapeNodeWithRectOfSize_(size)
+  def __init__(self, size=(100,100), centered=True, **kwargs):    
+
+    if centered:
+      size = py_to_cg(Size(*size))
+      self.node = SKShapeNode.shapeNodeWithRectOfSize_(size)
+    else:
+      rect = py_to_cg(Rect(*size))
+      self.node = SKShapeNode.shapeNodeWithRect_(rect)
     
     if self.needs_body(kwargs):
-      node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
+      self.node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
     
     super().__init__(**kwargs)
   
@@ -892,6 +897,9 @@ class SpriteNode(Node):
       else:
         self.node.physicsBody = SKPhysicsBody.bodyWithTexture_alphaThreshold_size_(texture, alpha_threshold, texture.size())
     super().__init__(**kwargs)
+    
+  color = node_color('color')
+  color_blend = node_relay('colorBlendFactor')
     
   @property
   def texture(self):
@@ -1249,6 +1257,8 @@ class Action:
   move_to_y = _action_scalar('moveToY_duration_')
   scale_by = _action_scalar('scaleBy_duration_')
   scale_to = _action_scalar('scaleTo_duration_')
+  height_to = _action_scalar('resizeToHeight_duration_')
+  width_to = _action_scalar('resizeToWidth_duration_')
 '''
 colorizeWithColorBlendFactor_duration_
 colorizeWithColor_colorBlendFactor_duration_
@@ -1471,9 +1481,17 @@ def didBeginContact_(_self, _cmd, _contact):
   scene = ObjCInstance(_self)
   contact = ObjCInstance(_contact)
   if hasattr(scene, 'py_node'):
-    node_a = contact.bodyA().node().py_node
-    node_b = contact.bodyB().node().py_node
-    scene.py_node.contact(node_a, node_b)
+    data = types.SimpleNamespace(
+      node_a=contact.bodyA().node().py_node,
+      node_b=contact.bodyB().node().py_node,
+      point=cg_to_py(contact.contactPoint()),
+      impulse=contact.collisionImpulse(),
+      normal=cg_to_py(contact.contactNormal())
+    )
+    #node_a = contact.bodyA().node().py_node
+    #node_b = contact.bodyB().node().py_node
+    
+    scene.py_node.contact(data)
 
 
 SpriteScene = create_objc_class(
@@ -1569,7 +1587,7 @@ class Scene(Node):
       sk_camera = self.node.camera()
       return None if sk_camera is None else  sk_camera.py_node
       
-  def contact(self, node_a, node_b):
+  def contact(self, data):
     pass
     
   @prop
@@ -1984,6 +2002,8 @@ if __name__ == '__main__':
     image=ui.Image('spc:EnemyBlue2'), 
     position=(150,600),
     velocity=(0, -100),          #5
+    color='grey',
+    color_blend=1.0,
     parent=scene)
     
   rock = SpaceRock(

@@ -33,9 +33,9 @@ class PoolScene(Scene):
       else:
         self.cue_ball.position = (0, -290)
   
-  def contact(self, a, b):
+  def contact(self, data):
     global to_remove
-    ball = a if b.name == 'sensor' else b
+    ball = data.node_a if data.node_b.name == 'sensor' else data.node_b
     to_remove.append(ball)
     
   def update(self, ct):
@@ -201,4 +201,4 @@ scene.cue_ball = CueBall(
   position=(0, -125),
 )
   
-run(scene)
+run(scene, 'full_screen', hide_title_bar=True)

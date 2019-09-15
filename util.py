@@ -108,7 +108,6 @@ def prop(func):
   return property(func, func)
 
 def node_relay(attribute_name):
-  '''Property creator for pass-through physics properties'''
   p = property(
     lambda self:
       getter(self.node, attribute_name),
@@ -126,10 +125,8 @@ def node_relay_prop(attribute_name):
       setattr(self.node, attribute_name, value)
   )
   return p
-'''
   
 def node_relay_set(attribute_name):
-  '''Property creator for pass-through physics properties'''
   set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
   p = property(
     lambda self:
@@ -138,6 +135,7 @@ def node_relay_set(attribute_name):
       getattr(self.node, set_name)(value)
   )
   return p
+'''
   
 def node_convert(attribute_name):
   p = property(
@@ -190,10 +188,10 @@ def color_prop(self, attribute, *value):
   else:
     color = getter(self.node, attribute)
     return (
-      color.red,
-      color.green,
-      color.blue,
-      color.alpha
+      color.red(),
+      color.green(),
+      color.blue(),
+      color.alpha()
     )
   
 def node_color(attribute_name):
