@@ -1,9 +1,9 @@
-import random, importlib, math, functools, uuid, types
+import random, importlib, math, functools, uuid, types, ctypes
 
 import ui
 from objc_util import *
 from objc_util import ObjCInstanceMethodProxy
-from scene import Rect, Size
+from scene import Point, Rect, Size
 import list_callback
 
 import pygestures
@@ -905,6 +905,57 @@ class SpriteNode(Node):
   def texture(self):
     return Texture(self.node.texture())
 
+  @prop
+  def warp(self, *args):
+    if args:
+      value = args[0]
+      self.node.setWarpGeometry_(value.geometry)
+    else:
+      return WarpGrid(geometry=self.node.warpGeometry())
+
+
+class float2(Structure):
+  _fields_ = [('x',c_float),('y',c_float)]
+    
+
+class WarpGrid:
+  
+  def __init__(self, cols=0, rows=0, geometry=None):
+    if geometry is not None:
+      self.geometry = geometry
+    elif cols > 0 and rows > 0:
+      self.geometry = SKWarpGeometryGrid.gridWithColumns_rows_(cols-1, rows-1)
+    else:
+      self.geometry = SKWarpGeometryGrid.grid()
+    
+  def set_sources(self, positions):
+    assert len(positions) == self.vertices
+    src_pos = (float2*len(positions))(*positions)
+    self.geometry = warp.gridByReplacingSourcePositions_(
+      byref(dest_pos),
+      restype=c_void_p, argtypes=[c_void_p])
+    return self
+    
+  def set_destinations(self, positions):
+    assert len(positions) == self.vertices
+    dest_pos = (float2*len(positions))(*positions)
+    self.geometry = self.geometry.gridByReplacingDestPositions_(
+      byref(dest_pos),
+      restype=c_void_p, argtypes=[c_void_p])
+    return self
+    
+  @property
+  def columns(self):
+    return self.geometry.numberOfColumns()+1
+    
+  @property
+  def rows(self):
+    return self.geometry.numberOfRows()+1
+    
+  @property
+  def vertices(self):
+    return self.geometry.vertexCount()
+  
 
 class LabelNode(Node):
   
@@ -2002,10 +2053,18 @@ if __name__ == '__main__':
     image=ui.Image('spc:EnemyBlue2'), 
     position=(150,600),
     velocity=(0, -100),          #5
-    color='grey',
-    color_blend=1.0,
+    #color='grey',
+    #color_blend=1.0,
     parent=scene)
-    
+  
+  dest = [
+    (0.0, -0.5), (0.5, 0.0), (1.0, -0.5),
+    (0.0, 0.5), (0.5, 0.5), (1.0, 0.5),
+    (0.0, 1.0), (0.5, 1.0), (1.0, 1.0),
+  ]
+
+  ship.warp = WarpGrid(3,3).set_destinations(dest)  
+  
   rock = SpaceRock(
     image=ui.Image('spc:MeteorGrayBig3'), 
     position=(170,100),

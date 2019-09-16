@@ -19,6 +19,7 @@ SK_classes = [
   'SKConstraint', 'SKRange',
   'SKAction',
   'SKTextureAtlas',
+  'SKWarpGeometryGrid',
 ]
 
 for class_name in SK_classes:
