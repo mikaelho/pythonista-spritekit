@@ -1,4 +1,4 @@
-import random, importlib, math, functools, uuid, types, ctypes
+import random, importlib, math, functools, uuid, types, ctypes, itertools
 
 import ui
 from objc_util import *
@@ -167,6 +167,7 @@ class Node:
   collision_bitmask = physics_relay('collisionBitMask')
   density = physics_relay('density')
   dynamic = physics_relay('dynamic')
+  field_bitmask = physics_relay('fieldBitMask')
   frame = node_convert('frame')
   friction = physics_relay('friction')
   hidden = node_relay('hidden')
@@ -418,130 +419,7 @@ class ShapeNode(Node, ShapeProperties):
     l = functools.reduce(_keep_left, points, [])
     u = functools.reduce(_keep_left, reversed(points), [])
     return l.extend(u[i] for i in range(1, len(u) - 1)) or l
-    
-  '''
-  @classmethod
-  def simple(cls, points, path=None):
-    if len(points) < 2: return
-    path = path or ui.Path()
-    start = Point(*points[0])
-    path.line_to(*start)
-    for end in points[1:]:
-      end = Point(*end)
-      if abs(start.x-end.x) > abs(start.y-end.y):
-        cp1 = Point((start.x+end.x)/2, start.y)
-        cp2 = (cp1.x, end.y)
-      else:
-        cp1 = Point(start.x, (start.y+end.y)/2)
-        cp2 = Point(end.x, cp1.y)
-      path.add_curve(*end, *cp1, *cp2)
-      start = end
-    return path
-      
-  @classmethod
-  def smoothed(cls, points, path=None):
-    assert len(points) > 1
-    points = [Point(*p) for p in points]
-    path = path or ui.Path()
-    start = Point(*points[0])
-    path.line_to(*start)
-    
-    rhs_array = []
-    a = []
-    b = []
-    c = []
-    
-    for i in range(len(points)-1):
-      p0 = points[i]
-      p3 = points[i+1]
-      
-      if i == 0:
-        a.append(0)
-        b.append(2)
-        c.append(1)
-        rhs_value = p0 + 2 * p3
-      elif i == len(points)-1:
-        a.append(2)
-        b.append(7)
-        c.append(0)
-        rhs_value = 8*p0+p3
-      else:
-        a.append(1)
-        b.append(4)
-        c.append(1)
-        rhs_value = 4*p0 + 2*p3
-      rhs_array.append(rhs_value)
-        
-    for i in range(1, len(points)-1):
-      rhs_value = rhs_array[i]
-      prev_value = rhs_array[i-1]
-      m = a[i]/b[i-1]
-      b1 = b[i] - m * c[i-1]
-      #b1 = b[i] — m * c[i-1]
-      b[i] = b1
-      rhs_array[i] = rhs_value - m * prev_value
-    
-    first_cps = [None]*len(points)
-    first_cps[-1] = rhs_array[-1]/b[-1]
-    
-    for i in range(len(points)-2, -1, -1):
-      first_cps[i] = rhs_array[i] - c[i] * first_cps[i+1]/b[i]
-      
-    second_cps = []
-      
-    for i in range(len(points)-1):
-      if i == len(points)-2:
-        p3 = points[i+1]
-        p1 = first_cps[i]
-        second_cps.append((p3+p1)/2)
-      else:
-        p3 = points[i+1]
-        next_p1 = first_cps[i+1]
-        second_cps.append(2*p3-next_p1)
-        
-    for i in range(1, len(points)-1):
-      path.add_curve(*points[i], *first_cps[i], *second_cps[i])
-      
-    return path
-    
-  @classmethod
-  def quadcurve(cls, points, path=None):
-  
-    def control_point(p1, p2):
-      #return (p1+p2)/2
-      control = (p1+p2)/2
-      diff_x = abs(p2.x - control.x)
-      diff_y = abs(p2.y - control.y)
-      if diff_x > diff_y:
-        if p1.x < p2.x:
-          control.x += diff_x
-        elif p1.x > p2.x:
-          control.x -= diff_x
-      else:
-        if p1.y < p2.y:
-          control.y += diff_y
-        elif p1.y > p2.y:
-          control.y -= diff_y
-      return control
-  
-    if len(points) < 2: return
-    path = path or ui.Path()
-    points = [ui.Point(*p) for p in points]
-    p1 = points[0]
-    #path.move_to(*p1)
-    if len(points) == 2:
-      path.line_to(*points[1])
-      return path
-    for i in range(len(points)):
-      mid = (p1+points[i])/2
-      path.add_quad_curve(
-        *mid, *control_point(mid, p1))
-      path.add_quad_curve(
-        *points[i], *control_point(mid, points[i]))
-      p1 = points[i]
-    return path
-  '''
-  
+
   
 class BoxNode(Node, ShapeProperties):
   
@@ -558,92 +436,20 @@ class BoxNode(Node, ShapeProperties):
       self.node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
     
     super().__init__(**kwargs)
-  
-  '''
-  @prop
-  def size(self, *args):
-    if args:
-      w, h = self._size = args[0]
-      self.path = ui.Path.rect(-w/2, -h/2, w, h)
-    else:
-      return self._size
-  '''
 
-class PathNode(Node):
+
+class CircleNode(Node, ShapeProperties):
   
-  def __init__(self, path=None, **kwargs):
-    if path is not None:
-      self.node = None
-      self.no_body = kwargs.pop('no_body', False)
-      self.path = path
+  def __init__(self, radius=50, **kwargs):
+    #self.node = None
+    #r = self._radius = radius
+    
+    self.node = SKShapeNode.shapeNodeWithCircleOfRadius_(radius)
+    if self.needs_body(kwargs):
+      self.body = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
+    
     super().__init__(**kwargs)
-    
-  @prop
-  def path(self, *args):
-    if args:
-      value = args[0]
-      self._path = path = value
-      cgpath = path.objc_instance.CGPath()
-      if self.node is None:
-        self.node = TouchShapeNode.shapeNodeWithPath_(cgpath)
-      else:
-        self.node.path = cgpath
-      if self.no_body:
-        return self.node.setPhysicsBody_(SKPhysicsBody.bodyWithEdgeChainFromPath_(cgpath))
-    else:
-      return self._path
-  
-  @classmethod
-  def quadcurve(cls, points, path=None):
-  
-    def control_point(p1, p2):
-      #return (p1+p2)/2
-      control = (p1+p2)/2
-      diff_y = abs(p2.y - control.y)
-      if p1.y < p2.y:
-        control.y += diff_y
-      elif p1.y > p2.y:
-        control.y -= diff_y
-      return control
-  
-    if len(points) < 2: return
-    path = path or ui.Path()
-    points = [ui.Point(*p) for p in points]
-    p1 = points[0]
-    #path.move_to(*p1)
-    if len(points) == 2:
-      path.line_to(*points[1])
-      return path
-    for i in range(len(points)):
-      mid = (p1+points[i])/2
-      path.add_quad_curve(
-        *mid, *control_point(mid, p1))
-      path.add_quad_curve(
-        *points[i], *control_point(mid, points[i]))
-      p1 = points[i]
-    return path
-
-    
-  antialiased = node_relay('antialiased')
       
-  @prop
-  def fill_texture(self, *args):
-    if args:
-      value = args[0]
-      if value is not None:
-        value = value.texture
-      self.node.fillTexture = value
-    else:
-      value = self.node.fillTexture
-      if value is not None:
-        value = Texture(value)
-      return value
-      
-  glow_width = node_relay('glowWidth')
-  line_color = node_color('strokeColor')
-  line_width = node_relay('lineWidth')
-  line_length = node_relay('lineLength')
-
 
 class PointsNode(Node):
   
@@ -668,60 +474,6 @@ class PointsNode(Node):
     print(self.anchor_point)
     
     super().__init__(**kwargs)
-    
-    
-class ConvexNode(PathNode):
-  
-  def __init__(self, points, smooth=False, **kwargs):
-    cg_points = [ py_to_cg(point) for point in points ]
-
-    cg_points_array = (CGPoint * len(cg_points))(*cg_points)
-    
-    if smooth:
-      self.node = SKShapeNode.shapeNodeWithSplinePoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
-
-    else:
-      self.node = SKShapeNode.shapeNodeWithPoints_count_(cg_points_array, len(cg_points), restype=c_void_p, argtypes=[POINTER(CGPoint), c_ulong])
-    
-    if not kwargs.pop('no_body', False):
-      hull = ConvexNode.hull(points)
-      path = ui.Path()
-      for p in hull:
-        path.line_to(*p)
-      path.line_to(*hull[0])
-      cgpath = path.objc_instance.CGPath()
-        
-      physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
-      self.node.setPhysicsBody_(physics)
-    
-    super().__init__(**kwargs)
-
-  @classmethod
-  def hull(cls, points):
-    '''
-    Returns points on convex hull in CCW order according to Graham's scan algorithm. 
-    By Tom Switzer <thomas.switzer@gmail.com>.
-    '''
-    TURN_LEFT, TURN_RIGHT, TURN_NONE = (1, -1, 0)
-
-    def cmp(a, b):
-      return (a > b) - (a < b)
-
-    def turn(p, q, r):
-      return cmp((q[0] - p[0])*(r[1] - p[1]) - (r[0] - p[0])*(q[1] - p[1]), 0)
-
-    def _keep_left(hull, r):
-      while len(hull) > 1 and turn(hull[-2], hull[-1], r) == TURN_RIGHT:
-      #while len(hull) > 1 and turn(hull[-2], hull[-1], r) != TURN_LEFT:
-        hull.pop()
-      if not len(hull) or hull[-1] != r:
-        hull.append(r)
-      return hull
-
-    points = sorted(points)
-    l = functools.reduce(_keep_left, points, [])
-    u = functools.reduce(_keep_left, reversed(points), [])
-    return l.extend(u[i] for i in range(1, len(u) - 1)) or l
 
 
 class EffectNode(Node):
@@ -841,33 +593,6 @@ class Anchor:
     self.anchor_point = ui.Point(*anchor_point)
     self.offset = ui.Point(*offset)
     
-
-class CircleNode(PathNode):
-  
-  def __init__(self, radius=50, **kwargs):
-    #self.node = None
-    #r = self._radius = radius
-    
-    self.node = SKShapeNode.shapeNodeWithCircleOfRadius_(radius)
-    if not kwargs.pop('no_body', False):
-      self.body = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
-    
-    super().__init__(None, **kwargs)
-      
-    '''
-    super().__init__(path=ui.Path.oval(-r, -r, 2*r, 2*r), **kwargs)
-    #self.anchor_point = (0.5, 0.)
-    #print(self.anchor_point)
-    '''
-  '''
-  @prop
-  def radius(self, *args):
-    if args:
-      self._radius = r = args[0]
-      self.path = ui.Path.oval(-r, -r, 2*r, 2*r)
-    else:
-      return self._radius
-  '''
     
 class EdgePathNode(Node):
   
@@ -955,7 +680,37 @@ class WarpGrid:
   @property
   def vertices(self):
     return self.geometry.vertexCount()
+    
+  @property
+  def sources(self):
+    return [d for d in ctypes.cast(
+      self.geometry.sourcePositions(), 
+      POINTER(float2*self.vertices)).contents]
+      
+  @property
+  def destinations(self):
+    return [d for d in ctypes.cast(
+      self.geometry.destPositions(), 
+      POINTER(float2*self.vertices)).contents]
   
+  @classmethod    
+  def tuples(cls, positions):
+    return [(f.x, f.y) for f in positions]
+    
+  def set_spiral(self, max_rotation=0):
+    V = Vector
+    origin = Vector(0.5,0.5)
+    l = WarpGrid.tuples(self.sources)
+    list_2d = [l[i:i+self.rows] for i in range(0, len(l), self.rows)]
+    for row in range(self.rows):
+      for col in range(self.columns):
+        current = Vector(list_2d[row][col])
+        pointer = current-origin
+        distance_factor = pointer.magnitude/0.5
+        pointer.radians += distance_factor * max_rotation
+        list_2d[row][col] = tuple(origin+pointer)
+    return self.set_destinations(list(itertools.chain.from_iterable(list_2d)))
+        
 
 class LabelNode(Node):
   
@@ -1051,6 +806,7 @@ class FieldNode(Node):
   def vortex(cls):
     return FieldNode(SKFieldNode.vortexField())
     
+  category_bitmask = node_relay('categoryBitMask')
   enabled = node_relay('enabled')
   exclusive = node_relay('exclusive')
   falloff = node_relay('falloff')
@@ -1141,7 +897,6 @@ class EmitterNode(Node):
   emission_angle_range = node_relay('emissionAngleRange')
   emission_distance = node_relay('emissionDistance')
   emission_distance_range = node_range('emissionDistanceRange')
-  field_bit_mask = node_relay('fieldBitMask')
   num_particles_to_emit = node_relay('numParticlesToEmit')
   particle_action = node_relay('particleAction')
   particle_alpha = node_relay('particleAlpha')
@@ -1184,36 +939,36 @@ class EmitterNode(Node):
 
 def _action(objc_func_name):
   @classmethod
-  def f(cls, duration=0.5, timing=None):
+  def _f(cls, duration=0.5, timing=None):
     a = getattr(SKAction, objc_func_name)(duration)
     if timing is not None:
       a.setTimingMode_(timing)
     return a
-  return f
+  return _f
   
 def _action_scalar(objc_func_name):
   @classmethod
-  def f(cls, scalar, duration=0.5, timing=None):
+  def _f(cls, scalar, duration=0.5, timing=None):
     a = getattr(SKAction, objc_func_name)(scalar, duration)
     if timing is not None:
       a.setTimingMode_(timing)
     return a
-  return f
+  return _f
   
 def _action_vector(objc_func_name):
   @classmethod
-  def f(cls, vector, duration=0.5, timing=None):
+  def _f(cls, vector, duration=0.5, timing=None):
     cgvector = CGVector(*vector)
     a = getattr(SKAction, objc_func_name)(
       vector, duration)
     if timing is not None:
       a.setTimingMode_(timing)
     return a
-  return f
+  return _f
   
 def _action_vector_point(objc_func_name):
   @classmethod
-  def f(cls, vector, point, duration=0.5, timing=None):
+  def _f(cls, vector, point, duration=0.5, timing=None):
     cgvector = CGVector(*vector)
     a = getattr(SKAction, objc_func_name)(
       vector,
@@ -1222,18 +977,18 @@ def _action_vector_point(objc_func_name):
     if timing is not None:
       a.setTimingMode_(timing)
     return a
-  return f
+  return _f
   
 def _action_path(objc_func_name):
   @classmethod
-  def f(cls, path, duration=0.5, timing=None):
+  def _f(cls, path, duration=0.5, timing=None):
     assert type(path) == ui.Path
     cgpath = path.objc_instance.CGPath()
     a = getattr(SKAction, objc_func_name)(cgpath, duration)
     if timing is not None:
       a.setTimingMode_(timing)
     return a
-  return f
+  return _f
   
 class Action:
   
@@ -1306,11 +1061,37 @@ class Action:
   move_to = _action_vector('moveTo_duration_')
   move_to_x = _action_scalar('moveToX_duration_')
   move_to_y = _action_scalar('moveToY_duration_')
+  rotate_by = _action_scalar('rotateByAngle_duration_')
+  rotate_to = _action_scalar('rotateToAngle_duration_')  
   scale_by = _action_scalar('scaleBy_duration_')
   scale_to = _action_scalar('scaleTo_duration_')
   height_to = _action_scalar('resizeToHeight_duration_')
   width_to = _action_scalar('resizeToWidth_duration_')
+  wait = _action('waitForDuration_')
+  
+  @classmethod
+  def warp_to(cls, warp, duration=0.5):
+    return SKAction.warpTo_duration_(
+      warp.geometry, duration)
+      
+  @classmethod
+  def warps(cls, warps, times=None, restore=False, duration=0.5):
+    if times is None:
+      times = [
+        duration/len(warps)*(i+1)
+        for i in range(len(warps))
+      ]
+    geometries = [w.geometry for w in warps]
+    return SKAction.animateWithWarps_times_restore_(geometries, times, restore)
+  
 '''
+
+TODO:
+animateWithNormalTextures_timePerFrame_
+animateWithNormalTextures_timePerFrame_resize_restore_
+animateWithTextures_timePerFrame_
+animateWithTextures_timePerFrame_resize_restore_
+
 colorizeWithColorBlendFactor_duration_
 colorizeWithColor_colorBlendFactor_duration_
 convertAction_toDuration_
@@ -1333,8 +1114,6 @@ resizeByWidth_height_duration_
 resizeToHeight_duration_
 resizeToWidth_duration_
 resizeToWidth_height_duration_
-rotateByAngle_duration_
-rotateToAngle_duration_
 rotateToAngle_duration_shortestUnitArc_
 scaleToSize_duration_
 scaleXBy_y_duration_
@@ -1352,9 +1131,8 @@ stereoPanTo_duration_
 stop
 strengthBy_duration_
 strengthTo_duration_
-waitForDuration_
 waitForDuration_withRange_
-warpTo_duration_
+
 '''
     
 class Constraint:
@@ -2032,11 +1810,12 @@ if __name__ == '__main__':
     return CircleNode(radius, position=point)
   
   scene = Scene(
-    background_color='black',     #1
+    background_color='black',     
     physics=SpacePhysics,
-    physics_debug=True)         #2
+    #physics_debug=True,
+  )         
     
-  class SpaceRock(SpriteNode):    #3
+  class SpaceRock(SpriteNode):    
     
     def __init__(self, **kwargs):
       super().__init__(**kwargs)
@@ -2050,25 +1829,26 @@ if __name__ == '__main__':
       )
     
   ship = SpriteNode(
-    image=ui.Image('spc:EnemyBlue2'), 
-    position=(150,600),
-    velocity=(0, -100),          #5
-    #color='grey',
-    #color_blend=1.0,
+    #image=ui.Image('spc:EnemyBlue2'),
+    'shp:x3',
+    position=(50,600),
+    #velocity=(0, -100),
     parent=scene)
-  
-  dest = [
-    (0.0, -0.5), (0.5, 0.0), (1.0, -0.5),
-    (0.0, 0.5), (0.5, 0.5), (1.0, 0.5),
-    (0.0, 1.0), (0.5, 1.0), (1.0, 1.0),
+    
+  warps = [
+    WarpGrid(21,21).set_spiral(-math.pi/1.25/10*i)
+    for i in range(11)
   ]
-
-  ship.warp = WarpGrid(3,3).set_destinations(dest)  
+  ship.run_action([
+    Action.wait(duration=6.0),
+    Action.warps(warps, duration=3.0)
+  ])
+  #ship.warp = WarpGrid(21,21).set_spiral(math.pi*2)  
   
   rock = SpaceRock(
     image=ui.Image('spc:MeteorGrayBig3'), 
     position=(170,100),
-    velocity=(0,100),
+    #velocity=(0,100),
     parent=scene)
     
   wierd = create_circle_shape(point=(300, 300))
@@ -2097,15 +1877,4 @@ if __name__ == '__main__':
   )
     
   scene.view.present()
-  
-  '''
-  @script
-  def animate(node):
-    show(ship1)
-    show(ship2)
-    yield 1.0
-    ship1.velocity = (100,0)
-    ship2.velocity = (-100,0)
-  '''
-    
-  #animate(scene)
+

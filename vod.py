@@ -18,6 +18,7 @@ class RaceGame:
   object_contact = 1
   ship_contact = 2 # Detect ship
   buoy_collision = 0 # Not colliding
+  ship_field = 4
   
   def __init__(self, scene):
     self.scene = scene
@@ -159,9 +160,12 @@ class RaceGame:
       category_bitmask=self.ship_category,
       collision_bitmask=self.object_category,
       contact_bitmask=self.object_contact,
+      #field_bitmask=self.ship_field,
       position=position,
       parent=self.scene)
     self.scene.camera.add_constraint(Constraint.distance_to_node(self.ship, Range.constant(0)))
+    
+    print(self.ship.field_bitmask)
     
   def place_buoy(self, cell):
     position = self.pos_in_cell(cell)
@@ -185,8 +189,34 @@ class RaceGame:
       position=position,
       parent=self.scene
     )
-    if len(self.buoys) == 1:
+    buoy_number = len(self.buoys)
+    if buoy_number == 1:
       buoy.contact_bitmask = self.ship_contact
+    if buoy_number == 3:
+      self.place_vortex(buoy)
+      
+  def place_vortex(self, buoy):
+    
+    vortex_visual = SpriteNode(
+      'shp:x3',
+      no_body=True,
+      alpha=0.3,
+      scale=10,
+      z_position=-1,
+      parent=buoy)
+    
+    vortex_visual.warp = WarpGrid(21,21).set_spiral(math.pi*2)  
+    vortex_visual.run_action(Action.forever(
+      Action.rotate_by(-math.pi/2)))
+      
+    vortex_field = FieldNode.vortex()
+    vortex_field.parent = self.scene
+    vortex_field.position = buoy.position
+    vortex_field.region = Region.radius(300)
+    vortex_field.strength = -0.001
+    vortex_field.falloff = 2
+    vortex_field.category_bitmask = self.ship_field
+    print(vortex_field.node.categoryBitMask())
     
   def place_rock(self, cell):
     position = self.pos_in_cell(cell)
@@ -209,6 +239,7 @@ class RaceGame:
       name='rock',
       category_bitmask=self.object_category,
       collision_bitmask=self.object_category,
+      field_bitmask=self.object_category,
       smooth=True,
       fill_color=color,
       line_color=color,
