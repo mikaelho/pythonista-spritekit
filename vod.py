@@ -165,8 +165,6 @@ class RaceGame:
       parent=self.scene)
     self.scene.camera.add_constraint(Constraint.distance_to_node(self.ship, Range.constant(0)))
     
-    print(self.ship.field_bitmask)
-    
   def place_buoy(self, cell):
     position = self.pos_in_cell(cell)
     buoy = CircleNode(20,
@@ -196,27 +194,40 @@ class RaceGame:
       self.place_vortex(buoy)
       
   def place_vortex(self, buoy):
-    
-    vortex_visual = SpriteNode(
+    self.vortex_buoy = buoy
+    vortex = SpriteNode(
       'shp:x3',
       no_body=True,
       alpha=0.3,
       scale=10,
       z_position=-1,
       parent=buoy)
-    
-    vortex_visual.warp = WarpGrid(21,21).set_spiral(math.pi*2)  
-    vortex_visual.run_action(Action.forever(
-      Action.rotate_by(-math.pi/2)))
+    vortex.warp = WarpGrid(21,21).set_spiral(-math.pi*2)  
+    vortex.run_action(Action.forever(
+      Action.rotate_by(math.pi/2)))
       
+    '''
+    # Vortex field does not work
+    # Replaced by a check in update
     vortex_field = FieldNode.vortex()
     vortex_field.parent = self.scene
     vortex_field.position = buoy.position
     vortex_field.region = Region.radius(300)
-    vortex_field.strength = -0.001
-    vortex_field.falloff = 2
+    vortex_field.strength = 0.003
+    vortex_field.falloff = 100
+    print(vortex_field.node.falloff())
     vortex_field.category_bitmask = self.ship_field
-    print(vortex_field.node.categoryBitMask())
+    '''
+    
+  def simulate_vortex(self, strength=0.9):
+    v = Vector(self.ship.position - self.vortex_buoy.position)
+    if v.magnitude > 300: return
+    
+    v.radians += math.pi/2
+    v.magnitude = strength
+    
+    self.ship.apply_force(tuple(v))
+
     
   def place_rock(self, cell):
     position = self.pos_in_cell(cell)
@@ -237,6 +248,7 @@ class RaceGame:
     color = (randint(30,50)/100,)*3
     ShapeNode(points,
       name='rock',
+      hull=True,
       category_bitmask=self.object_category,
       collision_bitmask=self.object_category,
       field_bitmask=self.object_category,
@@ -365,6 +377,7 @@ class RaceScene(Scene):
       self.game.time.text = elapsed.format('m:ss:SS')
     
     self.game.ship.trigger_thrust()
+    self.game.simulate_vortex()
 
     #lead = vector.Vector(self.ship.velocity)
     #lead.magnitude = min(lead.magnitude, 100)
@@ -434,6 +447,7 @@ class Ship(ShapeNode):
 scene = RaceScene(
   physics=SpacePhysics,
   #physics_debug=True,
+  #field_debug=True,
 )
 
 game = RaceGame(scene)

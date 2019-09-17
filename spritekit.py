@@ -14,6 +14,7 @@ from util import *
 class Node:
   
   default_physics = None
+  texture_creation_view = SKView.alloc().init()
   
   def __init__(self, **kwargs):
     self._parent = None
@@ -134,7 +135,8 @@ class Node:
       cgpath)
       
   def as_texture(self):
-    return Texture.from_node(self)
+    assert hasattr(self, 'node') and self.node is not None
+    return self.texture_creation_view.textureFromNode_(self.node)
     
   def apply_impulse(self, impulse):
     self.body.applyImpulse_(impulse)
@@ -270,7 +272,7 @@ class ShapeNode(Node, ShapeProperties):
       physics = SKPhysicsBody.bodyWithPolygonFromPath_(cgpath)
       self.node.setPhysicsBody_(physics)
     else:
-      texture = SKView.alloc().init().textureFromNode_(self.node)
+      texture = self.as_texture()
       physics = SKPhysicsBody.bodyWithTexture_size_(texture, texture.size())
       self.node.setPhysicsBody_(physics)
     
@@ -1358,8 +1360,9 @@ touchesEnded_withEvent_,
 class Scene(Node):
   
   @on_main_thread
-  def __init__(self, physics=None, touchable=False, physics_debug=False, **kwargs):
+  def __init__(self, physics=None, touchable=False, physics_debug=False, field_debug=False, **kwargs):
     kwargs['physics_debug'] = physics_debug
+    kwargs['field_debug'] = field_debug
     self.corners = None
     self.view = view = TouchableSpriteView(**kwargs) if touchable else SpriteView(**kwargs)
     rect = CGRect(CGPoint(0, 0), CGSize(view.width, view.height))
@@ -1533,7 +1536,7 @@ class TouchScene(Scene):
 class SpriteView(Scripter):
 
   @on_main_thread
-  def __init__(self, physics_debug, **kwargs):
+  def __init__(self, physics_debug, field_debug, **kwargs):
     super().__init__(**kwargs)
     rect = CGRect(CGPoint(0, 0),CGSize(self.width, self.height))
     skview = SKView.alloc().initWithFrame_(rect)
@@ -1541,6 +1544,8 @@ class SpriteView(Scripter):
     #skview.showsNodeCount = True
     if physics_debug:
       skview.showsPhysics = True
+    if field_debug:
+      skview.showsFields = True
     ObjCInstance(self).addSubview(skview)
     self.skview = skview
     self.multitouch_enabled = True

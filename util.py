@@ -2,6 +2,7 @@ import ui
 from objc_util import *
 from objc_util import ObjCInstanceMethodProxy
 from scene import Rect, Size, Vector2
+import types
 
 
 load_framework('SpriteKit')
@@ -31,17 +32,33 @@ class Range:
   def __init__(self, range):
     self.range = range
     
-  @property
+  @classmethod
+  def enable(cls, objc_range):
+    methods = {
+      'upper_limit': Range.upper_limit,
+      'lower_limit': Range.lower_limit
+    }
+    for key in methods:
+      setattr(objc_range, key, types.MethodType(methods[key], objc_range))
+    return objc_range
+
   def upper_limit(self):
-    return self.range.upperLimit()
+    return self.upperLimit()
     
-  @property
   def lower_limit(self):
-    return self.range.lowerLimit()
+    return self.lowerLimit()
+    
+  @classmethod
+  def zero(cls):
+    return Range.enable(SKRange.rangeWithConstantValue_(0))
     
   @classmethod
   def constant(cls, value):
     return Range(SKRange.rangeWithConstantValue_(value))
+    
+  @classmethod
+  def constant_o(cls, value):
+    return Range.enable(SKRange.rangeWithConstantValue_(value))
     
   @classmethod
   def lower(cls, limit):
