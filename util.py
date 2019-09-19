@@ -16,6 +16,7 @@ SK_classes = [
   'SKCameraNode', 'SKLightNode',
   'SKTexture',
   'SKEffectNode',
+  'SKLightNode',
   'SKFieldNode', 'SKRegion',
   'SKConstraint', 'SKRange',
   'SKAction',
@@ -164,6 +165,15 @@ def node_convert(attribute_name):
   )
   return p
   
+def node_texture(attribute_name):
+  p = property(
+    lambda self:
+      Texture(getter(self.node, attribute_name)),
+    lambda self, value:
+      setter(self.node, attribute_name, None if value is None else Texture(value).texture)
+  )
+  return p
+  
 def node_range(attribute_name):
   p = property(
     lambda self:
@@ -231,6 +241,8 @@ def physics_relay(attribute_name):
   )
   return p
   
+  
+  
 def physics_relay_set(attribute_name):
   '''Property creator for pass-through physics properties'''
   set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
@@ -272,3 +284,44 @@ def physics_vector(attribute_name):
       setter(self.node.physicsBody(), attribute_name, CGVector(*value))
   )
   return p
+  
+  
+class Texture:
+  
+  def __init__(self, image_data):
+    if type(image_data) == str:
+      image_data = ui.Image(image_data)
+    if type(image_data) == ui.Image:
+      self.texture = SKTexture.textureWithImage_(ObjCInstance(image_data))
+    elif type(image_data) == Texture:
+      self.texture = image_data.texture
+    else:
+      self.texture = image_data
+    
+  @prop
+  def size(self, *args):
+    if args:
+      value = args[0]
+    else:
+      return cg_to_py(self.texture.size())
+    
+  def crop(self, rect):
+    return Texture(SKTexture.textureWithRect_inTexture_(py_to_cg(rect), self.texture))
+    
+  @classmethod
+  def from_node(cls, node):
+    return Texture(Node.textureFromNode_(node.node))
+    
+  def normal_map(self, smoothness=0.0, contrast=1.0):
+    return self.texture.textureByGeneratingNormalMapWithSmoothness_contrast_(smoothness, contrast)
+    
+  @classmethod
+  def noise_vector_map(self, smoothness=0.0, size=(100,100)):
+    size=py_to_cg(size)
+    return Texture(SKTexture.textureVectorNoiseWithSmoothness_size_(smoothness, size))
+    
+  def rounded_normal_map():
+    '''Treats the R, G, and B components of each as the X, Y, and Z components of a surface normal vector.
+    0 = -1.0, 127 = 0.0, 255 = 1.0
+    '''
+    pass

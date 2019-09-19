@@ -610,9 +610,11 @@ class EdgePathNode(Node):
     
 class SpriteNode(Node):
   
-  def __init__(self, image,  alpha_threshold=None, **kwargs):
-    image_texture = Texture(image)
-    texture = image_texture.texture
+  def __init__(self, image=None,  alpha_threshold=None, **kwargs):
+    texture = None
+    if image is not None:
+      image_texture = Texture(image)
+      texture = image_texture.texture
     '''
     if type(image) == ui.Image:
       texture = SKTexture.textureWithImage_(ObjCInstance(image))
@@ -627,10 +629,12 @@ class SpriteNode(Node):
     
   color = node_color('color')
   color_blend = node_relay('colorBlendFactor')
+  lighting_bitmask = node_relay('lightingBitMask')
+  shadowed_bitmask = node_relay('shadowedBitMask')
+  shadow_cast_bitmask = node_relay('shadowCastBitMask')
     
-  @property
-  def texture(self):
-    return Texture(self.node.texture())
+  texture = node_texture('texture')
+  normal_texture = node_texture('normalTexture')
 
   @prop
   def warp(self, *args):
@@ -713,6 +717,20 @@ class WarpGrid:
         list_2d[row][col] = tuple(origin+pointer)
     return self.set_destinations(list(itertools.chain.from_iterable(list_2d)))
         
+  def soften(self, variance=0.1):
+    V = Vector
+    origin = Vector(0.5,0.5)
+    l = WarpGrid.tuples(self.sources)
+    list_2d = [l[i:i+self.rows] for i in range(0, len(l), self.rows)]
+    for row in range(self.rows):
+      for col in range(self.columns):
+        current = Vector(list_2d[row][col])
+        pointer = current-origin
+        original = pointer.magnitude
+        pointer.magnitude = original + random.random()*original*variance-0.5*variance
+        list_2d[row][col] = tuple(origin+pointer)
+    return self.set_destinations(list(itertools.chain.from_iterable(list_2d)))
+        
 
 class LabelNode(Node):
   
@@ -745,6 +763,21 @@ class LabelNode(Node):
       self.font_size = value[1]
     else:
       return (self.font_name, self.font_size)
+
+
+class LightNode(Node):
+  
+  def __init__(self, **kwargs):
+    self.node = SKLightNode.alloc().init()
+    super().__init__(**kwargs)
+  
+  enabled = node_relay('enabled')
+  ambient_color = node_color('ambientColor')
+  light_color = node_color('lightColor')
+  shadow_color = node_color('shadowColor')
+  falloff = node_relay('falloff')
+  category_bitmask = node_relay('categoryBitMask')
+
 
 class FieldNode(Node):
   
@@ -1648,33 +1681,7 @@ def run(scene, *args, **kwargs):
   scene.view.present(*args, **kwargs)
   #if hasattr(scene, 'setup'):
   #  scene.setup()
-  
-class Texture:
-  
-  def __init__(self, image_data):
-    if type(image_data) == str:
-      image_data = ui.Image(image_data)
-    if type(image_data) == ui.Image:
-      self.texture = SKTexture.textureWithImage_(ObjCInstance(image_data))
-    elif type(image_data) == Texture:
-      self.texture = image_data.texture
-    else:
-      self.texture = image_data
-    
-  @prop
-  def size(self, *args):
-    if args:
-      value = args[0]
-    else:
-      return cg_to_py(self.texture.size())
-    
-  def crop(self, rect):
-    return Texture(SKTexture.textureWithRect_inTexture_(py_to_cg(rect), self.texture))
-    
-  @classmethod
-  def from_node(cls, node):
-    return Texture(SKView.alloc().init().textureFromNode_(node.node))
-    
+
 
 if __name__ == '__main__':
   
@@ -1832,38 +1839,29 @@ if __name__ == '__main__':
         random.randint(-100, 100),
         random.randint(-100, 100)
       )
-    
-  ship = SpriteNode(
-    #image=ui.Image('spc:EnemyBlue2'),
-    'shp:x3',
-    position=(50,600),
-    #velocity=(0, -100),
+  
+  rock = SpriteNode(
+    'spc:MeteorGrayBig3',
+    lighting_bitmask=1,
     parent=scene)
     
-  warps = [
-    WarpGrid(21,21).set_spiral(-math.pi/1.25/10*i)
-    for i in range(11)
-  ]
-  ship.run_action([
-    Action.wait(duration=6.0),
-    Action.warps(warps, duration=3.0)
-  ])
-  #ship.warp = WarpGrid(21,21).set_spiral(math.pi*2)  
-  
-  rock = SpaceRock(
-    image=ui.Image('spc:MeteorGrayBig3'), 
-    position=(170,100),
-    #velocity=(0,100),
-    parent=scene)
+  rock_too = SpriteNode(
+    'spc:MeteorGrayBig3', 
+    normal_texture=Texture('spc:MeteorGrayBig3').normal_map(contrast=10),
+    lighting_bitmask=1,
+    position=(100,200),
+    parent=scene,
+  )
     
-  wierd = create_circle_shape(point=(300, 300))
-  wierd.fill_color = 'grey'
-  wierd.parent = scene
+  light = LightNode(
+    category_bitmask=1,
+    light_color='white',
+    falloff=1.2,
+    z_position=10,
+    position=(50,100),
+    parent=scene
+  )
     
-  wierd = create_polygon_shape(position=(200, 300))
-  wierd.fill_color = 'grey'
-  wierd.parent = scene
-  
   points = get_points()
   path = ShapeNode.path_from_points(points)
   
@@ -1877,7 +1875,7 @@ if __name__ == '__main__':
   scene.camera = CameraNode(parent=scene)
   scene.camera.add_constraint(
     Constraint.distance_to_node(
-      ship,
+      rock,
       Range.constant(0))
   )
     
