@@ -3,22 +3,34 @@ import vector, arrow
 from vector import Vector as V
 from random import *
 
+class Buoy(CircleNode): pass
+
+Node.collision_groups = (
+  ('rock', ('rock', 'ship', 'last_buoy', 'connector')),
+)
+Node.contact_groups = (
+  ('ship', ('rock', 'first_buoy', 'sensor_of_last_buoy')),
+)
+Node.field_groups = (
+  ('vortex', 'ship'),
+)
+
 class RaceGame:
   
   playfield = Size(2000, 2000)
   buoy_amount = 4
-  rock_amount = 100
-  rock_min = 20
-  rock_max = 40
+  rock_amount = 10
+  #rock_min = 20
+  #rock_max = 40
   rock_velocity_max = 50
   rock_angular_max = 2
   
-  object_category = 1
-  ship_category = 1+2
-  object_contact = 1
-  ship_contact = 2 # Detect ship
-  buoy_collision = 0 # Not colliding
-  ship_field = 4
+  #object_category = 1
+  #ship_category = 1+2
+  #object_contact = 1
+  #ship_contact = 2 # Detect ship
+  #buoy_collision = 0 # Not colliding
+  #ship_field = 4
   
   def __init__(self, scene):
     self.scene = scene
@@ -56,13 +68,14 @@ class RaceGame:
       self.cells.remove(pos)
       self.place_buoy(pos)
       
-    for pos in sample(self.cells, self.rock_amount):
-      self.cells.remove(pos)
-      self.place_rock(pos)
+    self.place_rocks()
       
     self.place_ship()
+    self.place_light()
     self.add_hud_elements()
     self.update_buoys()
+    
+    self.ship.density = 100
     
     self.scene.initialized = True
     
@@ -157,20 +170,30 @@ class RaceGame:
   def place_ship(self):
     position = self.pos_in_cell((0,0))
     self.ship = Ship(
-      category_bitmask=self.ship_category,
-      collision_bitmask=self.object_category,
-      contact_bitmask=self.object_contact,
+      name='ship',
+      #category_bitmask=self.ship_category,
+      #collision_bitmask=self.object_category,
+      #contact_bitmask=self.object_contact,
       #field_bitmask=self.ship_field,
       position=position,
       parent=self.scene)
     self.scene.camera.add_constraint(Constraint.distance_to_node(self.ship, Range.constant(0)))
     
-  def place_buoy(self, cell):
+  def place_light(self):
+    LightNode(
+      category_bitmask=1,
+      light_color='white',
+      falloff=1.1,
+      parent=self.ship,
+    )
+    
+  def place_buoy(self, cell):   
     position = self.pos_in_cell(cell)
-    buoy = CircleNode(20,
-      name='buoy',
-      category_bitmask=self.ship_contact,
-      collision_bitmask=self.buoy_collision,
+    names = ['first_buoy']+['buoy']*(self.buoy_amount-2)+['last_buoy']
+    buoy = Buoy(20,
+      name=names[len(self.buoys)],
+      #category_bitmask=self.ship_contact,
+      #collision_bitmask=self.buoy_collision,
       fill_color='black',
       line_color='red',
       font=('Courier', 24),
@@ -188,10 +211,12 @@ class RaceGame:
       parent=self.scene
     )
     buoy_number = len(self.buoys)
-    if buoy_number == 1:
-      buoy.contact_bitmask = self.ship_contact
     if buoy_number == 3:
       self.place_vortex(buoy)
+    if buoy_number == 4:
+      pass
+      #buoy.category_bitmask = self.ship_category
+      #buoy.collision_bitmask = self.object_category
       
   def place_vortex(self, buoy):
     self.vortex_buoy = buoy
@@ -205,21 +230,22 @@ class RaceGame:
     vortex.warp = WarpGrid(21,21).set_spiral(-math.pi*2)  
     vortex.run_action(Action.forever(
       Action.rotate_by(math.pi/2)))
-      
-    '''
-    # Vortex field does not work
+     
+    # Vortex field does not seem to work
     # Replaced by a check in update
-    vortex_field = FieldNode.vortex()
-    vortex_field.parent = self.scene
-    vortex_field.position = buoy.position
-    vortex_field.region = Region.radius(300)
-    vortex_field.strength = 0.003
-    vortex_field.falloff = 100
-    print(vortex_field.node.falloff())
-    vortex_field.category_bitmask = self.ship_field
-    '''
+    vortex_field = FieldNode.vortex(
+      name = 'vortex',
+      parent = self.scene,
+      position = buoy.position,
+      region = Region.radius(300),
+      strength = 1,
+      falloff = 0,
+      #category_bitmask = self.ship_field,
+    )
     
+  ''' 
   def simulate_vortex(self, strength=0.9):
+    return 
     v = Vector(self.ship.position - self.vortex_buoy.position)
     if v.magnitude > 300: return
     
@@ -227,40 +253,77 @@ class RaceGame:
     v.magnitude = strength
     
     self.ship.apply_force(tuple(v))
+  '''
 
-    
-  def place_rock(self, cell):
-    position = self.pos_in_cell(cell)
-    r = randint(self.rock_min, self.rock_max)
-    magnitude = randint(int(.3*r), int(.7*r))
-    points = []
-    for a in range(0, 340, 20):
-      magnitude = max(
-        min(
-          magnitude + randint(
-            int(-.2*r), int(.2*r)), 
-          r),
-        .2*r)
-      point = V(magnitude, 0)
-      point.degrees = a
-      points.append(tuple(point))
-    points.append(points[0])
-    color = (randint(30,50)/100,)*3
-    ShapeNode(points,
-      name='rock',
-      hull=True,
-      category_bitmask=self.object_category,
-      collision_bitmask=self.object_category,
-      field_bitmask=self.object_category,
-      smooth=True,
-      fill_color=color,
-      line_color=color,
-      position=position,
-      velocity=(
-        randint(-self.rock_velocity_max, self.rock_velocity_max), 
-        randint(-self.rock_velocity_max, self.rock_velocity_max)),
-      angular_velocity = randint(-self.rock_angular_max, self.rock_angular_max),
-      parent=self.scene)
+  def place_rocks(self):
+    rock_names = (
+      'spc:MeteorGrayBig1',
+      'spc:MeteorGrayBig2',
+      'spc:MeteorGrayBig3',
+      'spc:MeteorGrayBig4',
+      'spc:MeteorGrayMed1',
+      'spc:MeteorGrayMed2',
+      'spc:MeteorGraySmall1',
+      'spc:MeteorGraySmall2',
+      #'spc:MeteorGrayTiny1',
+      #'spc:MeteorGrayTiny2'
+    )
+    textures = [
+      Texture(name) for name in rock_names
+    ]
+    for pos in sample(self.cells, self.rock_amount):
+      self.cells.remove(pos)
+      position = self.pos_in_cell(pos)
+      rock = SpriteNode(choice(textures),
+        name='rock',
+        density=100,
+        #category_bitmask=self.object_category,
+        #collision_bitmask=self.object_category,
+        #field_bitmask=self.object_category,
+        lighting_bitmask=1,
+        color=(random(),)*3,
+        color_blend=min(0.5,random()),
+        smooth=True,
+        position=position,
+        velocity=(
+          randint(-self.rock_velocity_max, self.rock_velocity_max), 
+          randint(-self.rock_velocity_max, self.rock_velocity_max)),
+        angular_velocity = randint(-self.rock_angular_max, self.rock_angular_max),
+        parent=self.scene)
+      #rock.warp = WarpGrid(5,5).soften()
+      rock.scale = 0.75
+      '''
+      r = randint(self.rock_min, self.rock_max)
+      magnitude = randint(int(.3*r), int(.7*r))
+      points = []
+      for a in range(0, 340, 20):
+        magnitude = max(
+          min(
+            magnitude + randint(
+              int(-.2*r), int(.2*r)), 
+            r),
+          .2*r)
+        point = V(magnitude, 0)
+        point.degrees = a
+        points.append(tuple(point))
+      points.append(points[0])
+      color = (randint(30,50)/100,)*3
+      ShapeNode(points,
+        name='rock',
+        hull=True,
+        category_bitmask=self.object_category,
+        collision_bitmask=self.object_category,
+        field_bitmask=self.object_category,
+        smooth=True,
+        fill_color=color,
+        line_color=color,
+        position=position,
+        velocity=(
+          randint(-self.rock_velocity_max, self.rock_velocity_max), 
+          randint(-self.rock_velocity_max, self.rock_velocity_max)),
+        angular_velocity = randint(-self.rock_angular_max, self.rock_angular_max),
+        parent=self.scene)
+      '''
     
   def pos_in_cell(self, cell):
     return tuple((
@@ -272,16 +335,28 @@ class RaceGame:
   def process_contacts(self, data):
     a = data.node_a
     b = data.node_b
-    if a.name == 'buoy' or b.name == 'buoy':
+    #print(a.name, b.name)
+
+    if type(a) == Buoy or type(b) == Buoy:
       buoy_hit = self.buoys[self.visited]
-      buoy_hit.contact_bitmask = 0
+      active_category = buoy_hit.category_bitmask
+      buoy_hit.category_bitmask = 0
       buoy_hit.line_color = 'green'
       buoy_hit.stop_actions()
       
       self.visited += 1
       
       if self.visited < self.buoy_amount: 
-        self.buoys[self.visited].contact_bitmask = self.ship_contact
+        self.buoys[self.visited].category_bitmask = active_category
+        
+        if self.visited == self.buoy_amount - 1:
+          self.sensor = CircleNode(50,
+            name='sensor_of_last_buoy',
+            hidden=True,
+            dynamic=False,
+            position=self.buoys[self.visited].position,
+            parent=self.scene
+          )
         self.update_buoys()
       else:
         l = ui.Label(text=self.time.text,
@@ -295,8 +370,22 @@ class RaceGame:
         self.scene.view.add_subview(l)
         self.scene.run_action(Action.fade_out(duration=2))
         
+    elif a.name == 'sensor_of_last_buoy' or b.name == 'sensor_of_last_buoy':
+      delta = Vector(self.sensor.position-self.ship.position)
+      p = ui.Path()
+      p.line_to(*delta)
+      connector = ShapeNode(p,
+        hull=True,
+        name='connector',
+        line_color='white',
+        line_width=5,
+        position=self.ship.position,
+        z_position=self.ship.z_position - 1,
+        parent=self.scene)
+      
+      self.sensor.parent = None
     else:
-      self.ship.damage += data.impulse * 10
+      self.ship.damage += data.impulse/10
       damage_factor = min(1.0, 
         self.ship.damage/
         self.ship.max_damage)
@@ -377,7 +466,8 @@ class RaceScene(Scene):
       self.game.time.text = elapsed.format('m:ss:SS')
     
     self.game.ship.trigger_thrust()
-    self.game.simulate_vortex()
+    
+    #self.game.simulate_vortex()
 
     #lead = vector.Vector(self.ship.velocity)
     #lead.magnitude = min(lead.magnitude, 100)
@@ -397,7 +487,7 @@ class Ship(ShapeNode):
   
   def __init__(self, **kwargs):
     self.thrust = 0
-    self.max_thrust = 5
+    self.max_thrust = 500
     self.damage = 0
     self.max_damage = 100
     

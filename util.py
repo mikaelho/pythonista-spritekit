@@ -316,7 +316,7 @@ class Texture:
     return self.texture.textureByGeneratingNormalMapWithSmoothness_contrast_(smoothness, contrast)
     
   @classmethod
-  def noise_vector_map(self, smoothness=0.0, size=(100,100)):
+  def noise_vector_map(self, size, smoothness=0.0):
     size=py_to_cg(size)
     return Texture(SKTexture.textureVectorNoiseWithSmoothness_size_(smoothness, size))
     

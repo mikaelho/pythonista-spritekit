@@ -13,6 +13,10 @@ from util import *
 
 class Node:
   
+  collision_groups = []
+  contact_groups = []
+  field_groups = []
+  
   default_physics = None
   texture_creation_view = SKView.alloc().init()
   
@@ -34,6 +38,13 @@ class Node:
       for key in dir(self.default_physics()):
         if not key.startswith('_'):
           setattr(self, key, getattr(self.default_physics, key))
+    
+    name = kwargs.pop('name', None)
+    if name is not None:
+      self.name = name
+      
+    self._process_body_bitmasks()
+    self._process_field_bitmasks()
     
     for key in kwargs:
       setattr(self, key, kwargs[key])
@@ -58,6 +69,55 @@ class Node:
   @property
   def children(self):
     return self._children
+  
+  def _process_body_bitmasks(self):
+    if self.body == None: return
+    if len(self.collision_groups) + len(self.contact_groups) == 0: return
+
+    self.category_bitmask = 0
+    self.collision_bitmask = 0
+
+    for i, group in enumerate(self.collision_groups):
+      mask = 1 << i
+      
+      these = [group[0]] if type(group[0]) == str  else group[0]
+      those = these if len(group) == 1 else ([group[1]] if type(group[1]) == str  else group[1])
+      
+      if self.name in these:
+        self.collision_bitmask |= mask
+      if self.name in those:
+        self.category_bitmask |= mask
+
+    for i, group in enumerate(self.contact_groups):
+      mask = 1 << (i+len(self.collision_groups))
+      
+      these = [group[0]] if type(group[0]) == str  else group[0]
+      those = these if len(group) == 1 else ([group[1]] if type(group[1]) == str  else group[1])
+      
+      if self.name in these:
+        self.contact_bitmask |= mask
+      if self.name in those:
+        self.category_bitmask |= mask
+  
+  def _process_field_bitmasks(self):
+    if len(self.field_groups) == 0:
+      return
+      
+    if type(self) is FieldNode or self.body is not None:
+      for i, group in enumerate(self.field_groups):
+        mask = 1 << i
+        
+        these = [group[0]] if type(group[0]) == str  else group[0]
+        those = [group[1]] if type(group[1]) == str  else group[1]
+        
+        if self.name in these:
+          if self.category_bitmask == 0xFFFFFFFF:
+            self.category_bitmask = 0
+          self.category_bitmask |= mask
+        if self.name in those:
+          if self.field_bitmask == 0xFFFFFFFF:
+            self.field_bitmask = 0
+          self.field_bitmask |= mask
   
   @prop
   def constraints(self, *args):
@@ -781,65 +841,65 @@ class LightNode(Node):
 
 class FieldNode(Node):
   
-  def __init__(self, fieldnode):
+  def __init__(self, fieldnode, **kwargs):
     self.node = fieldnode
-    super().__init__()
+    super().__init__(**kwargs)
   
   @classmethod
-  def drag(cls):
-    return FieldNode(SKFieldNode.dragField())
+  def drag(cls, **kwargs):
+    return FieldNode(SKFieldNode.dragField(), **kwargs)
     
   @classmethod
-  def electric(cls):
-    return FieldNode(SKFieldNode.electricField())
+  def electric(cls, **kwargs):
+    return FieldNode(SKFieldNode.electricField(), **kwargs)
     
   @classmethod
-  def linear_gravity(cls, gravity_vector):
+  def linear_gravity(cls, gravity_vector, **kwargs):
     return FieldNode(
-      SKFieldNode.linearGravityFieldWithVector_(py_to_cg(gravity_vector)))
+      SKFieldNode.linearGravityFieldWithVector_(py_to_cg(gravity_vector)), **kwargs)
     
   @classmethod
-  def magnetic(cls):
-    return FieldNode(SKFieldNode.magneticField())
+  def magnetic(cls, **kwargs):
+    return FieldNode(SKFieldNode.magneticField(), **kwargs)
     
   @classmethod
-  def noise(cls, smoothness, animation_speed):
+  def noise(cls, smoothness, animation_speed, **kwargs):
     return FieldNode(
       SKFieldNode.noiseFieldWithSmoothness_animationSpeed_(
         smoothness,
-        animation_speed))
+        animation_speed), **kwargs)
         
   @classmethod
-  def radial_gravity(cls):
+  def radial_gravity(cls, **kwargs):
     return FieldNode(
-      SKFieldNode.radialGravityField())
+      SKFieldNode.radialGravityField(), **kwargs)
       
   @classmethod
-  def spring(cls):
+  def spring(cls, **kwargs):
     return FieldNode(
-      SKFieldNode.springField())
+      SKFieldNode.springField(), **kwargs)
       
   @classmethod
-  def turbulence(cls, smoothness, animation_speed):
+  def turbulence(cls, smoothness, animation_speed, **kwargs):
     return FieldNode(
       SKFieldNode.turbulenceFieldWithSmoothness_animationSpeed_(
         smoothness,
-        animation_speed))
+        animation_speed), **kwargs)
         
   @classmethod
-  def velocity_texture(cls, texture):
+  def velocity_texture(cls, texture, **kwargs):
     assert type(texture) == Texture
     return FieldNode(
-      SKFieldNode.velocityFieldWithTexture_(texture.texture))
+      SKFieldNode.velocityFieldWithTexture_(texture.texture), **kwargs)
         
   @classmethod
-  def velocity_vector(cls, vector):
+  def velocity_vector(cls, vector, **kwargs):
     return FieldNode(
-      SKFieldNode.velocityFieldWithVector_(py_to_cg(vector)))
+      SKFieldNode.velocityFieldWithVector_(py_to_cg(vector)), **kwargs)
       
   @classmethod
-  def vortex(cls):
-    return FieldNode(SKFieldNode.vortexField())
+  def vortex(cls, **kwargs):
+    return FieldNode(SKFieldNode.vortexField(), **kwargs)
     
   category_bitmask = node_relay('categoryBitMask')
   enabled = node_relay('enabled')
@@ -1857,7 +1917,6 @@ if __name__ == '__main__':
     category_bitmask=1,
     light_color='white',
     falloff=1.2,
-    z_position=10,
     position=(50,100),
     parent=scene
   )

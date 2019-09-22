@@ -8,6 +8,7 @@ class ListScene(Scene, pygestures.GestureMixin):
   def __init__(self, **kwargs):
     super().__init__(physics=UIPhysics, edges=True, **kwargs)
     self.anchor_point = (0,1)
+    print(self.node.physicsBody())
     
   def update(self, ct):
     for node in self.children:
@@ -72,7 +73,7 @@ class ListView(ui.View):
     self.update_constraints()
     
   def update_constraints(self):
-
+    return 
     for i, v in enumerate(self.items):
       constraints = [
         Constraint.position_x(Range.constant(150))
@@ -104,4 +105,4 @@ v.add_subview(listview)
 
 #listview.hidden = True
 
-run(scene)
+run(scene, 'full_screen', hide_title_bar=True)
