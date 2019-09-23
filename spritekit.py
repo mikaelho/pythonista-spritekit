@@ -839,6 +839,15 @@ class LightNode(Node):
   category_bitmask = node_relay('categoryBitMask')
 
 
+class Joint:
+  
+  @classmethod
+  def pin(cls, node_a, node_b, anchor):
+    j = SKPhysicsJointPin.jointWithBodyA_bodyB_anchor_(node_a.body, node_b.body, py_to_cg(anchor))
+    print(dir(j))
+    node_a.scene.node.physicsWorld().addJoint_(j)
+    
+
 class FieldNode(Node):
   
   def __init__(self, fieldnode, **kwargs):

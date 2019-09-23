@@ -22,6 +22,11 @@ SK_classes = [
   'SKAction',
   'SKTextureAtlas',
   'SKWarpGeometryGrid',
+  'SKPhysicsJointFixed',
+  'SKPhysicsJointLimit',
+  'SKPhysicsJointPin',
+  'SKPhysicsJointSliding',
+  'SKPhysicsJointSpring',
 ]
 
 for class_name in SK_classes:
