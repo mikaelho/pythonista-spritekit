@@ -140,27 +140,6 @@ def node_relay(attribute_name):
   )
   return p
   
-'''
-def node_relay_prop(attribute_name):
-  p = property(
-    lambda self:
-      getattr(self.node, attribute_name)(),
-    lambda self, value:
-      setattr(self.node, attribute_name, value)
-  )
-  return p
-  
-def node_relay_set(attribute_name):
-  set_name = 'set'+attribute_name[0].upper()+attribute_name[1:]+'_'
-  p = property(
-    lambda self:
-      getattr(self.node, attribute_name)(),
-    lambda self, value:
-      getattr(self.node, set_name)(value)
-  )
-  return p
-'''
-  
 def node_convert(attribute_name):
   p = property(
     lambda self:

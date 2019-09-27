@@ -225,6 +225,7 @@ class Node:
   bbox = node_convert('calculateAccumulatedFrame') 
   bullet_physics = physics_relay('usesPreciseCollisionDetection')
   category_bitmask = physics_relay('categoryBitMask')
+  charge = physics_relay('charge')
   contact_bitmask = physics_relay('contactTestBitMask')
   collision_bitmask = physics_relay('collisionBitMask')
   density = physics_relay('density')
@@ -489,10 +490,10 @@ class BoxNode(Node, ShapeProperties):
 
     if centered:
       size = py_to_cg(Size(*size))
-      self.node = SKShapeNode.shapeNodeWithRectOfSize_(size)
+      self.node = TouchShapeNode.shapeNodeWithRectOfSize_(size)
     else:
       rect = py_to_cg(Rect(*size))
-      self.node = SKShapeNode.shapeNodeWithRect_(rect)
+      self.node = TouchShapeNode.shapeNodeWithRect_(rect)
     
     if self.needs_body(kwargs):
       self.node.physicsBody = SKPhysicsBody.bodyWithRectangleOfSize_(size)
@@ -506,7 +507,7 @@ class CircleNode(Node, ShapeProperties):
     #self.node = None
     #r = self._radius = radius
     
-    self.node = SKShapeNode.shapeNodeWithCircleOfRadius_(radius)
+    self.node = TouchShapeNode.shapeNodeWithCircleOfRadius_(radius)
     if self.needs_body(kwargs):
       self.body = SKPhysicsBody.bodyWithCircleOfRadius_(radius)
     
@@ -814,6 +815,9 @@ class LabelNode(Node):
   font_size = node_relay('fontSize')
   alignment = node_relay('horizontalAlignmentMode')
   vertical_alignment = node_relay('verticalAlignmentMode')
+  line_break_mode = node_relay('lineBreakMode')
+  max_width = node_relay('preferredMaxLayoutWidth')
+  number_of_lines = node_relay('numberOfLines')
   
   @prop
   def font(self, *args):
@@ -841,10 +845,22 @@ class LightNode(Node):
 
 class Joint:
   
+  ''' WARNING: Trying to use joints with shape-type physics body results in an ObjC exception. '''
+  
   @classmethod
   def pin(cls, node_a, node_b, anchor):
-    j = SKPhysicsJointPin.jointWithBodyA_bodyB_anchor_(node_a.body, node_b.body, py_to_cg(anchor))
-    print(dir(j))
+    j = SKPhysicsJointPin.jointWithBodyA_bodyB_anchor_(
+      node_a.body, node_b.body, 
+      py_to_cg(anchor))
+    node_a.scene.node.physicsWorld().addJoint_(j)
+    
+  @classmethod
+  def spring(cls, node_a, node_b, anchor_a, anchor_b, damping=0, frequency=0):
+    j = SKPhysicsJointSpring.jointWithBodyA_bodyB_anchorA_anchorB_(
+      node_a.body, node_b.body, 
+      py_to_cg(anchor_a), py_to_cg(anchor_b))
+    j.setDamping_(damping)
+    j.setFrequency_(frequency)
     node_a.scene.node.physicsWorld().addJoint_(j)
     
 
@@ -914,6 +930,7 @@ class FieldNode(Node):
   enabled = node_relay('enabled')
   exclusive = node_relay('exclusive')
   falloff = node_relay('falloff')
+  minimum_radius = node_relay('minimumRadius')
   strength = node_relay('strength')
   
   @prop
@@ -1059,12 +1076,22 @@ def _action_scalar(objc_func_name):
     return a
   return _f
   
+def _action_point(objc_func_name):
+  @classmethod
+  def _f(cls, point, duration=0.5, timing=None):
+    a = getattr(SKAction, objc_func_name)(
+      py_to_cg(point), duration)
+    if timing is not None:
+      a.setTimingMode_(timing)
+    return a
+  return _f
+  
 def _action_vector(objc_func_name):
   @classmethod
   def _f(cls, vector, duration=0.5, timing=None):
-    cgvector = CGVector(*vector)
+    cgvector = CGVector(dx=vector[0], dy=vector[1])
     a = getattr(SKAction, objc_func_name)(
-      vector, duration)
+      cgvector, duration)
     if timing is not None:
       a.setTimingMode_(timing)
     return a
@@ -1162,7 +1189,7 @@ class Action:
   falloff_to = _action_scalar('falloffTo_duration_')
   follow_path = _action_path('followPath_duration_')
   move_by = _action_vector('moveBy_duration_')
-  move_to = _action_vector('moveTo_duration_')
+  move_to = _action_point('moveTo_duration_')
   move_to_x = _action_scalar('moveToX_duration_')
   move_to_y = _action_scalar('moveToY_duration_')
   rotate_by = _action_scalar('rotateByAngle_duration_')
@@ -1191,6 +1218,7 @@ class Action:
 '''
 
 TODO:
+  
 animateWithNormalTextures_timePerFrame_
 animateWithNormalTextures_timePerFrame_resize_restore_
 animateWithTextures_timePerFrame_
@@ -1638,7 +1666,7 @@ class TouchScene(Scene):
 class SpriteView(Scripter):
 
   @on_main_thread
-  def __init__(self, physics_debug, field_debug, **kwargs):
+  def __init__(self, physics_debug=False, field_debug=False, **kwargs):
     super().__init__(**kwargs)
     rect = CGRect(CGPoint(0, 0),CGSize(self.width, self.height))
     skview = SKView.alloc().initWithFrame_(rect)
@@ -1742,7 +1770,7 @@ class UIPhysics(BasePhysics):
   bullet_physics = False
   dynamic = True
   friction = 0.2
-  linear_damping = 0.0
+  linear_damping = 0.2
   restitution = 0.0
 
 @on_main_thread

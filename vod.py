@@ -79,6 +79,8 @@ class RaceGame:
     
     self.scene.initialized = True
     
+    self.signal_from_here_to_there(self.ship.position, self.buoys[0].position)
+    
   def add_hud_elements(self):
     self.time = LabelNode('', 
       anchor_point=(1,1),
@@ -190,6 +192,9 @@ class RaceGame:
   def place_buoy(self, cell):   
     position = self.pos_in_cell(cell)
     names = ['first_buoy']+['buoy']*(self.buoy_amount-2)+['last_buoy']
+    parent = Node(
+      position=position,
+      parent=self.scene)
     buoy = Buoy(20,
       name=names[len(self.buoys)],
       #category_bitmask=self.ship_contact,
@@ -202,14 +207,14 @@ class RaceGame:
       glow_width=10,
       z_position=-1,
       dynamic=False,
-      position=position,
-      parent=self.scene)
+      #position=position,
+      parent=parent)
     self.buoys.append(buoy)
     LabelNode(text=str(len(self.buoys)),
       alpha=1.0,
       vertical_alignment=LabelNode.ALIGN_MIDDLE,
       #position=position,
-      parent=buoy
+      parent=parent
     )
     buoy_number = len(self.buoys)
     if buoy_number == 3:
@@ -286,6 +291,26 @@ class RaceGame:
       for i in [0, 1]
     ))
     
+  def signal_from_here_to_there(self, start, end):
+    signal = CircleNode(20,
+      no_body=True,
+      #category_bitmask=self.ship_contact,
+      #collision_bitmask=self.buoy_collision,
+      line_color='red',
+      glow_width=10,
+      z_position=-1,
+      position=start,
+      alpha=0.0,
+      parent=self.scene)
+    A = Action
+    signal.run_action([
+      A.alpha_to(0.5, duration=0.3),
+      A.scale_to(0.1, duration=0.3),
+      A.move_to(end),
+      A.scale_to(1.0, duration=0.3),
+      A.fade_out()
+    ])
+    
   def process_contacts(self, data):
     if not self.scene.initialized: return 
     a = data.node_a
@@ -303,6 +328,9 @@ class RaceGame:
       
       if self.visited < self.buoy_amount: 
         self.buoys[self.visited].category_bitmask = active_category
+        self.signal_from_here_to_there(
+          self.buoys[self.visited-1].position,
+          self.buoys[self.visited].position)
         
         if self.visited == self.buoy_amount - 1:
           self.sensor = CircleNode(50,
@@ -339,8 +367,8 @@ class RaceGame:
         parent=self.scene)
       Joint.pin(self.ship, connector, self.ship.position)
 
-      Joint.pin(last_buoy, connector, last_buoy.position)
-      last_buoy.dynamic = True
+      Joint.pin(last_buoy.parent, connector, last_buoy.position)
+      last_buoy.parent.dynamic = True
       
       self.sensor.parent = None
     else:
